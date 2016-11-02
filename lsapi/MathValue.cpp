@@ -1,31 +1,32 @@
-//=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
-//
-// This is a part of the Litestep Shell source code.
-//
-// Copyright (C) 1997-2015  LiteStep Development Team
-//
-// This program is free software; you can redistribute it and/or
-// modify it under the terms of the GNU General Public License
-// as published by the Free Software Foundation; either version 2
-// of the License, or (at your option) any later version.
-//
-// This program is distributed in the hope that it will be useful,
-// but WITHOUT ANY WARRANTY; without even the implied warranty of
-// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-// GNU General Public License for more details.
-//
-// You should have received a copy of the GNU General Public License
-// along with this program; if not, write to the Free Software
-// Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
-//
-//=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
-#include "MathValue.h"
-#include "../utility/debug.hpp"
+/*
+This is a part of the LiteStep Shell Source code.
+
+Copyright (C) 2006 The LiteStep Development Team
+
+This program is free software; you can redistribute it and/or
+modify it under the terms of the GNU General Public License
+as published by the Free Software Foundation; either version 2
+of the License, or (at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program; if not, write to the Free Software
+Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
+*/ 
+/****************************************************************************
+****************************************************************************/
+#include <cassert>
 #include <cfloat>
 #include <cmath>
 #include <limits>
 #include <sstream>
+#include <string>
 #include <string.h>
+#include "MathValue.h"
 
 using namespace std;
 
@@ -33,42 +34,42 @@ using namespace std;
 MathValue::MathValue() :
     mType(UNDEFINED)
 {
-    // do nothing
+
 }
 
 
 MathValue::MathValue(bool value) :
     mType(BOOLEAN), mBoolean(value)
 {
-    // do nothing
+
 }
 
 
 MathValue::MathValue(int value) :
     mType(NUMBER), mNumber(value)
 {
-    // do nothing
+
 }
 
 
 MathValue::MathValue(double value) :
     mType(NUMBER), mNumber(value)
 {
-    // do nothing
+
 }
 
 
-MathValue::MathValue(const wstring& value) :
+MathValue::MathValue(const string& value) :
     mType(STRING), mString(value)
 {
-    // do nothing
+
 }
 
 
-MathValue::MathValue(const wchar_t *value) :
+MathValue::MathValue(const char *value) :
     mType(STRING), mString(value)
 {
-    // do nothing
+
 }
 
 
@@ -76,7 +77,7 @@ MathValue& MathValue::operator=(bool value)
 {
     mType = BOOLEAN;
     mBoolean = value;
-
+    
     return *this;
 }
 
@@ -85,7 +86,7 @@ MathValue& MathValue::operator=(int value)
 {
     mType = NUMBER;
     mNumber = value;
-
+    
     return *this;
 }
 
@@ -94,49 +95,47 @@ MathValue& MathValue::operator=(double value)
 {
     mType = NUMBER;
     mNumber = value;
-
+    
     return *this;
 }
 
 
-MathValue& MathValue::operator=(const wstring& value)
+MathValue& MathValue::operator=(const string& value)
 {
     mType = STRING;
     mString = value;
-
+    
     return *this;
 }
 
 
-MathValue& MathValue::operator=(const wchar_t *value)
+MathValue& MathValue::operator=(const char *value)
 {
     mType = STRING;
     mString = value;
-
+    
     return *this;
 }
 
 
-wstring MathValue::GetTypeName() const
+string MathValue::GetTypeName() const
 {
     switch (mType)
     {
     case UNDEFINED:
-        return L"undefined";
-
+        return "undefined";
+        
     case BOOLEAN:
-        return L"boolean";
-
+        return "boolean";
+        
     case NUMBER:
-        return L"number";
-
+        return "number";
+        
     case STRING:
-        return L"string";
+        return "string";
     }
-
-    // Should never happen
-    ASSERT(false);
-    return wstring();
+    
+    return string();
 }
 
 
@@ -146,19 +145,19 @@ bool MathValue::ToBoolean() const
     {
     case UNDEFINED:
         return false;
-
+        
     case BOOLEAN:
         return mBoolean;
-
+        
     case NUMBER:
         return (mNumber != 0.0 && !_isnan(mNumber));
-
+        
     case STRING:
-        return (!mString.empty() && _wcsicmp(mString.c_str(), L"false") != 0);
+        return (!mString.empty() && _stricmp(mString.c_str(), "false") != 0);
     }
-
+    
     // Should never happen
-    ASSERT(false);
+    assert(false);
     return false;
 }
 
@@ -176,61 +175,61 @@ double MathValue::ToNumber() const
     {
     case UNDEFINED:
         return numeric_limits<double>::quiet_NaN();
-
+        
     case BOOLEAN:
         return (mBoolean ? 1.0 : 0.0);
-
+        
     case NUMBER:
         return mNumber;
-
+        
     case STRING:
         return MathStringToNumber(mString);
     }
-
+    
     // Should never happen
-    ASSERT(false);
+    assert(false);
     return 0.0;
 }
 
 
-wstring MathValue::ToString() const
+string MathValue::ToString() const
 {
     switch (mType)
     {
     case UNDEFINED:
-        return L"undefined";
-
+        return "undefined";
+        
     case BOOLEAN:
-        return mBoolean ? L"true" : L"false";
-
+        return mBoolean ? "true" : "false";
+        
     case NUMBER:
         return MathNumberToString(mNumber);
-
+        
     case STRING:
         return mString;
     }
-
+    
     // Should never happen
-    ASSERT(false);
-    return wstring();
+    assert(false);
+    return string();
 }
 
 
-wstring MathValue::ToCompatibleString() const
+string MathValue::ToCompatibleString() const
 {
     // To keep compatible with 0.24.x math evaluations, we must
     // return an integer formatted string for all number type
     // results.  Thus, convert number value to an Integer prior
     // to returning it as a string.
-    if (NUMBER == mType)
+    if(NUMBER == mType)
     {
-        wostringstream stream;
-
+        ostringstream stream;
+        
         stream << ToInteger();
-
+        
         return stream.str();
     }
-
+    
     // All other values, let the default handler deal with the
     // conversion process.
     return ToString();
@@ -244,7 +243,7 @@ MathValue operator+(const MathValue& a, const MathValue& b)
         // Undefined operands always generate an undefined result
         return MathValue();
     }
-
+    
     return (a.ToNumber() + b.ToNumber());
 }
 
@@ -256,7 +255,7 @@ MathValue operator+(const MathValue& a)
         // Undefined operands always generate an undefined result
         return MathValue();
     }
-
+    
     return a.ToNumber();
 }
 
@@ -268,7 +267,7 @@ MathValue operator-(const MathValue& a, const MathValue& b)
         // Undefined operands always generate an undefined result
         return MathValue();
     }
-
+    
     return (a.ToNumber() - b.ToNumber());
 }
 
@@ -280,7 +279,7 @@ MathValue operator-(const MathValue& a)
         // Undefined operands always generate an undefined result
         return MathValue();
     }
-
+    
     return -a.ToNumber();
 }
 
@@ -292,7 +291,7 @@ MathValue operator*(const MathValue& a, const MathValue& b)
         // Undefined operands always generate an undefined result
         return MathValue();
     }
-
+    
     return (a.ToNumber() * b.ToNumber());
 }
 
@@ -304,7 +303,7 @@ MathValue operator/(const MathValue& a, const MathValue& b)
         // Undefined operands always generate an undefined result
         return MathValue();
     }
-
+    
     return (a.ToNumber() / b.ToNumber());
 }
 
@@ -316,15 +315,15 @@ MathValue operator%(const MathValue& a, const MathValue& b)
         // Undefined operands always generate an undefined result
         return MathValue();
     }
-
+    
     double divisor = b.ToNumber();
-
+    
     if (divisor == 0.0)
     {
         // Modulus by zero generates a NaN
         return numeric_limits<double>::quiet_NaN();
     }
-
+    
     return fmod(a.ToNumber(), divisor);
 }
 
@@ -490,7 +489,7 @@ MathValue MathConcatenate(const MathValue& a, const MathValue& b)
         // Undefined operands always generate an undefined result
         return MathValue();
     }
-
+    
     return (a.ToString() + b.ToString());
 }
 
@@ -502,65 +501,65 @@ MathValue MathIntDivide(const MathValue& a, const MathValue& b)
         // Undefined operands always generate an undefined result
         return MathValue();
     }
-
+    
     int divisor = b.ToInteger();
-
+    
     if (divisor == 0)
     {
         // Division by zero results in an Infinity of the appropriate sign
         return _copysign(numeric_limits<double>::infinity(), a.ToNumber());
     }
-
+    
     return (a.ToInteger() / divisor);
 }
 
 
-wstring MathNumberToString(double number)
+string MathNumberToString(double number)
 {
     if (_finite(number))
     {
         // Number
-        wostringstream stream;
-
+        ostringstream stream;
+        
         stream.precision(numeric_limits<double>::digits10 + 1);
         stream << number;
-
+        
         return stream.str();
     }
     else if (number == numeric_limits<double>::infinity())
     {
         // Positive infinity
-        return L"Infinity";
+        return "Infinity";
     }
     else if (number == -numeric_limits<double>::infinity())
     {
         // Negative infinity
-        return L"-Infinity";
+        return "-Infinity";
     }
     else
     {
         // Not a Number (NaN)
-        return L"NaN";
+        return "NaN";
     }
 }
 
 
-double MathStringToNumber(const wstring& str)
+double MathStringToNumber(const string& str)
 {
-    wistringstream stream(str);
+    istringstream stream(str);
     double number;
-
+    
     if (stream >> number)
     {
         // Number
         return number;
     }
-    else if (_wcsicmp(str.c_str(), L"Infinity") == 0)
+    else if (_stricmp(str.c_str(), "Infinity") == 0)
     {
         // Positive infinity
         return numeric_limits<double>::infinity();
     }
-    else if (_wcsicmp(str.c_str(), L"-Infinity") == 0)
+    else if (_stricmp(str.c_str(), "-Infinity") == 0)
     {
         // Negative infinity
         return -numeric_limits<double>::infinity();

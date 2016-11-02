@@ -1,75 +1,79 @@
-//=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
-//
-// This is a part of the Litestep Shell source code.
-//
-// Copyright (C) 1997-2015  LiteStep Development Team
-//
-// This program is free software; you can redistribute it and/or
-// modify it under the terms of the GNU General Public License
-// as published by the Free Software Foundation; either version 2
-// of the License, or (at your option) any later version.
-//
-// This program is distributed in the hope that it will be useful,
-// but WITHOUT ANY WARRANTY; without even the implied warranty of
-// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-// GNU General Public License for more details.
-//
-// You should have received a copy of the GNU General Public License
-// along with this program; if not, write to the Free Software
-// Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
-//
-//=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
-#include "../utility/stringutility.h"
-#include "MathScanner.h"
+/*
+This is a part of the LiteStep Shell Source code.
+
+Copyright (C) 2006 The LiteStep Development Team
+
+This program is free software; you can redistribute it and/or
+modify it under the terms of the GNU General Public License
+as published by the Free Software Foundation; either version 2
+of the License, or (at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program; if not, write to the Free Software
+Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
+*/ 
+/****************************************************************************
+****************************************************************************/
+#include <cctype>
+#include <sstream>
+#include <string>
+#include <string.h>
 #include "MathException.h"
-#include <string.h> // needed for _stricmp
-#include <stdio.h> // needed for EOF
+#include "MathScanner.h"
+#include "MathToken.h"
 
 using namespace std;
 
 
 // Reserved words
-StringKeyedMaps<LPCWSTR, int>::ConstUnorderedMap gReservedWords(
+struct { const char *str; int type; } gReservedWords[] =
 {
-    { L"false",    TT_FALSE    },
-    { L"true",     TT_TRUE     },
-    { L"infinity", TT_INFINITY },
-    { L"nan",      TT_NAN      },
-    { L"defined",  TT_DEFINED  },
-    { L"div",      TT_DIV      },
-    { L"mod",      TT_MOD      },
-    { L"and",      TT_AND      },
-    { L"or",       TT_OR       },
-    { L"not",      TT_NOT      }
-});
+    { "false",    TT_FALSE    },
+    { "true",     TT_TRUE     },
+    { "infinity", TT_INFINITY },
+    { "nan",      TT_NAN      },
+    { "defined",  TT_DEFINED  },
+    { "div",      TT_DIV      },
+    { "mod",      TT_MOD      },
+    { "and",      TT_AND      },
+    { "or",       TT_OR       },
+    { "not",      TT_NOT      }
+};
+
+const int gNumReservedWords = sizeof(gReservedWords) / sizeof(gReservedWords[0]);
 
 
 // Operators and punctuation
 // Checked in this order so for example "<=" must precede "<". Must have enough
 // lookahead to recognize the longest symbol.
-struct SymbolTable { const wchar_t *str; int length; int type; } gSymbols[] = \
+struct { const char *str; int length; int type; } gSymbols[] =
 {
-    { L"(",  1, TT_LPAREN    },
-    { L")",  1, TT_RPAREN    },
-    { L",",  1, TT_COMMA     },
-    { L"+",  1, TT_PLUS      },
-    { L"-",  1, TT_MINUS     },
-    { L"*",  1, TT_STAR      },
-    { L"/",  1, TT_SLASH     },
-    { L"&",  1, TT_AMPERSAND },
-    { L"=",  1, TT_EQUAL     },
-    { L">=", 2, TT_GREATEREQ },
-    { L">",  1, TT_GREATER   },
-    { L"<>", 2, TT_NOTEQUAL  },
-    { L"<=", 2, TT_LESSEQ    },
-    { L"<",  1, TT_LESS      },
-    { L"!=", 2, TT_NOTEQUAL  }
+    { "(",  1, TT_LPAREN    },
+    { ")",  1, TT_RPAREN    },
+    { ",",  1, TT_COMMA     },
+    { "+",  1, TT_PLUS      },
+    { "-",  1, TT_MINUS     },
+    { "*",  1, TT_STAR      },
+    { "/",  1, TT_SLASH     },
+    { "&",  1, TT_AMPERSAND },
+    { "=",  1, TT_EQUAL     },
+    { ">=", 2, TT_GREATEREQ },
+    { ">",  1, TT_GREATER   },
+    { "<>", 2, TT_NOTEQUAL  },
+    { "<=", 2, TT_LESSEQ    },
+    { "<",  1, TT_LESS      },
+    { "!=", 2, TT_NOTEQUAL  }
 };
 
 const int gNumSymbols = sizeof(gSymbols) / sizeof(gSymbols[0]);
 
 
-MathScanner::MathScanner(const wstring& expression) :
+MathScanner::MathScanner(const string& expression) :
     mStream(expression)
 {
     // Fill the lookahead buffer
@@ -81,8 +85,8 @@ MathToken MathScanner::NextToken()
 {
     // Skip past whitespace
     SkipSpace();
-
-    if (mLookahead[0] == WEOF)
+    
+    if (mLookahead[0] < 0)
     {
         // End of input
         return MathToken(TT_END);
@@ -97,18 +101,18 @@ MathToken MathScanner::NextToken()
         // Numeric literal
         return ScanNumber();
     }
-    else if (mLookahead[0] == L'\"' || mLookahead[0] == L'\'')
+    else if (mLookahead[0] == '\"' || mLookahead[0] == '\'')
     {
         // String literal
         return ScanString();
     }
-
+    
     // Operators and punctuation symbols
-    for (int i = 0; i < gNumSymbols; ++i)
+    for (int i = 0; i < gNumSymbols; i++)
     {
         bool match = true;
-
-        for (int j = 0; j < gSymbols[i].length; ++j)
+        
+        for (int j = 0; j < gSymbols[i].length; j++)
         {
             if (mLookahead[j] != gSymbols[i].str[j])
             {
@@ -116,28 +120,30 @@ MathToken MathScanner::NextToken()
                 break;
             }
         }
-
+        
         if (match)
         {
             Next(gSymbols[i].length);
             return MathToken(gSymbols[i].type);
         }
     }
-
+    
     // Error
-    throw MathException(L"Illegal character");
+    throw MathException("Illegal character");
 }
 
 
-MathToken MathScanner::CheckReservedWord(const wstring& identifier)
+MathToken MathScanner::CheckReservedWord(const string& identifier)
 {
-    auto const & reserverdWord = gReservedWords.find(identifier.c_str());
-    if (reserverdWord != gReservedWords.end())
+    for (int i = 0; i < gNumReservedWords; i++)
     {
-        // It's a reserved word
-        return MathToken(reserverdWord->second);
+        if (_stricmp(identifier.c_str(), gReservedWords[i].str) == 0)
+        {
+            // It's a reserved word
+            return MathToken(gReservedWords[i].type);
+        }
     }
-
+    
     // It's just an identifier
     return MathToken(TT_ID, identifier);
 }
@@ -145,90 +151,86 @@ MathToken MathScanner::CheckReservedWord(const wstring& identifier)
 
 void MathScanner::Next(int count)
 {
-    for (int i = 0; i < count; ++i)
+    for (int i = 0; i < count; i++)
     {
-        for (int j = 0; j < LOOKAHEAD - 1; ++j)
-        {
+        for (int j = 0; j < LOOKAHEAD - 1; j++)
             mLookahead[j] = mLookahead[j + 1];
-        }
-
+        
         if (!mStream.get(mLookahead[LOOKAHEAD - 1]))
-        {
-            mLookahead[LOOKAHEAD - 1] = WEOF;
-        }
+            mLookahead[LOOKAHEAD - 1] = EOF;
     }
 }
 
 
 MathToken MathScanner::ScanIdentifier()
 {
-    wostringstream value;
-
+    ostringstream value;
+    
     while (IsNameChar(mLookahead[0]))
     {
         value.put(mLookahead[0]);
         Next();
     }
-
+    
     return CheckReservedWord(value.str());
 }
 
 
 MathToken MathScanner::ScanNumber()
 {
-    wostringstream value;
-
+    ostringstream value;
+    
     while (IsDigit(mLookahead[0]))
     {
         value.put(mLookahead[0]);
         Next();
     }
-
-    if (mLookahead[0] == L'.')
+    
+    if (mLookahead[0] == '.')
     {
         value.put(mLookahead[0]);
         Next();
-
+        
         while (IsDigit(mLookahead[0]))
         {
             value.put(mLookahead[0]);
             Next();
         }
     }
-
+    
     return MathToken(TT_NUMBER, value.str());
 }
 
 
 MathToken MathScanner::ScanString()
 {
-    wostringstream value;
-    wchar_t quote = mLookahead[0];
+    ostringstream value;
+    char quote = mLookahead[0];
     Next();
-
-    while (mLookahead[0] != WEOF && mLookahead[0] != quote)
+    
+    while (mLookahead[0] != EOF && mLookahead[0] != quote)
     {
-        if (mLookahead[0] == L'\\')
+        if (mLookahead[0] == '\\')
         {
             // Escape sequence
             Next();
-
+            
             switch (mLookahead[0])
             {
-            case L'\\':
-                value.put(L'\\');
+            case '\\':
+                value.put('\\');
                 break;
-
-            case L'\"':
-                value.put(L'\"');
+                
+            case '\"':
+                value.put('\"');
                 break;
-
-            case L'\'':
-                value.put(L'\'');
+                
+            case '\'':
+                value.put('\'');
                 break;
-
+                
             default:
-                throw MathException(L"Illegal string escape sequence");
+                throw MathException("Illegal string escape sequence");
             }
         }
         else
@@ -236,15 +238,15 @@ MathToken MathScanner::ScanString()
             // Just a character
             value.put(mLookahead[0]);
         }
-
+        
         Next();
     }
-
-    if (mLookahead[0] == WEOF)
+    
+    if (mLookahead[0] == EOF)
     {
-        throw MathException(L"Unterminated string literal");
+        throw MathException("Unterminated string literal");
     }
-
+    
     Next();
     return MathToken(TT_STRING, value.str());
 }
@@ -259,56 +261,56 @@ void MathScanner::SkipSpace()
 }
 
 
-bool MathScanner::IsDigit(wchar_t ch)
+bool MathScanner::IsDigit(char ch)
 {
-    return (ch >= L'0' && ch <= L'9');
+    return (ch >= '0' && ch <= '9');
 }
 
 
-bool MathScanner::IsFirstNameChar(wchar_t ch)
+bool MathScanner::IsFirstNameChar(char ch)
 {
     return !IsDigit(ch) && IsNameChar(ch);
 }
 
 
-bool MathScanner::IsNameChar(wchar_t ch)
+bool MathScanner::IsNameChar(char ch)
 {
-    if (ch == WEOF || IsSpace(ch))
+    if (ch < 0 || IsSpace(ch))
     {
         return false;
     }
 
     switch (ch)
     {
-    case L'!':
-    // case '@':  Will be reserved in 0.25
-    // case '#':  Will be reserved in 0.25
-    case L'$':
-    case L'&':
-    case L'*':
-    case L'(':
-    case L')':
-    case L'-':
-    case L'+':
-    case L'=':
-    case L'[':
-    case L']':
-    // case '|':  Will be reserved in 0.25
-    case L';':
-    case L'"':
-    case L'\'':
-    case L'<':
-    case L'>':
-    case L',':
-    case L'/':
-        return false;
+        case '!':
+        // case '@':  Will be reserved in 0.25
+        // case '#':  Will be reserved in 0.25
+        case '$':
+        case '&':
+        case '*':
+        case '(':
+        case ')':
+        case '-':
+        case '+':
+        case '=':
+        case '[':
+        case ']':
+        // case '|':  Will be reserved in 0.25
+        case ';':
+        case '"':
+        case '\'':
+        case '<':
+        case '>':
+        case ',':
+        case '/':
+            return false;
     }
 
     return true;
 }
 
 
-bool MathScanner::IsSpace(wchar_t ch)
+bool MathScanner::IsSpace(char ch)
 {
-    return (ch == L' ' || ch == L'\t'); // More than this?
+    return (ch == ' ' || ch == '\t'); // More than this?
 }

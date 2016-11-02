@@ -1,98 +1,92 @@
-//=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
-//
-// This is a part of the Litestep Shell source code.
-//
-// Copyright (C) 1997-2015  LiteStep Development Team
-//
-// This program is free software; you can redistribute it and/or
-// modify it under the terms of the GNU General Public License
-// as published by the Free Software Foundation; either version 2
-// of the License, or (at your option) any later version.
-//
-// This program is distributed in the hope that it will be useful,
-// but WITHOUT ANY WARRANTY; without even the implied warranty of
-// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-// GNU General Public License for more details.
-//
-// You should have received a copy of the GNU General Public License
-// along with this program; if not, write to the Free Software
-// Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
-//
-//=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
-#include "BangManager.h"
-#include "../utility/debug.hpp"
+/*
+This is a part of the LiteStep Shell Source code.
 
+Copyright (C) 1997-2005 The LiteStep Development Team
+
+This program is free software; you can redistribute it and/or
+modify it under the terms of the GNU General Public License
+as published by the Free Software Foundation; either version 2
+of the License, or (at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program; if not, write to the Free Software
+Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
+*/ 
+/****************************************************************************
+****************************************************************************/
+#include "BangManager.h"
 
 BangManager::BangManager()
 {
-    // do nothing
 }
-
 
 BangManager::~BangManager()
 {
-    // do nothing
 }
 
 
 // Add a bang command to the manager
-BOOL BangManager::AddBangCommand(Bang *pbbBang)
+BOOL BangManager::AddBangCommand(LPCSTR pszName, Bang *pbbBang)
 {
-    Lock lock(m_cs);
+	Lock lock(m_cs);
 
-    BangMap::iterator iter = bang_map.find(pbbBang->GetCommand());
+	ASSERT(pszName);
+	BangMap::iterator iter = bang_map.find(pszName);
 
-    if (iter != bang_map.end())
-    {
-        iter->second->Release();
-        bang_map.erase(iter);
-    }
+	if (iter != bang_map.end())
+	{
+		iter->second->Release();
+		bang_map.erase(iter);
+	}
 
-    bang_map.emplace(pbbBang->GetCommand(), pbbBang);
-    pbbBang->AddRef();
+	bang_map.insert(BangMap::value_type(pszName, pbbBang));
+	pbbBang->AddRef();
 
-    return TRUE;
+	return TRUE;
 }
-
 
 // Remove a bang command from the manager
-BOOL BangManager::RemoveBangCommand(LPCWSTR pwzName)
+BOOL BangManager::RemoveBangCommand(LPCSTR pszName)
 {
-    Lock lock(m_cs);
-    BOOL bReturn = FALSE;
+	Lock lock(m_cs);
+	BOOL bReturn = FALSE;
 
-    ASSERT(pwzName != nullptr);
-    BangMap::iterator iter = bang_map.find(pwzName);
+	ASSERT(pszName);
+	BangMap::iterator iter = bang_map.find(pszName);
 
-    if (iter != bang_map.end())
-    {
-        Bang * bang = iter->second;
-        bang_map.erase(iter);
-        bang->Release(); // We must erase before we release since the key is stored inside the Bang.
+	if (iter != bang_map.end())
+	{
+		iter->second->Release();
+		bang_map.erase(iter);
 
-        bReturn = TRUE;
-    }
+		bReturn = TRUE;
+	}
 
-    return bReturn;
+	return bReturn;
 }
 
-
-// Execute named bang command, passing params, getting result
-BOOL BangManager::ExecuteBangCommand(LPCWSTR pszName, HWND hCaller, LPCWSTR pwzParams)
+// Execute a bang command with the specified name, passing params, getting result
+BOOL BangManager::ExecuteBangCommand(LPCSTR pszName, HWND hCaller, LPCSTR pszParams)
 {
-    BOOL bReturn = FALSE;
-    Bang* pToExec = nullptr;
+	BOOL bReturn = FALSE;
+    Bang* pToExec = NULL;
 
     // Acquiring lock manually to allow manual release below
     m_cs.Acquire();
 
+    ASSERT(pszName);
     BangMap::const_iterator iter = bang_map.find(pszName);
 
-    if (iter != bang_map.end())
-    {
+	if (iter != bang_map.end())
+	{
         pToExec = iter->second;
         pToExec->AddRef();
-    }
+	}
 
     // Release lock before executing the !bang since the BangProc might
     // (recursively) enter this function again
@@ -100,46 +94,57 @@ BOOL BangManager::ExecuteBangCommand(LPCWSTR pszName, HWND hCaller, LPCWSTR pwzP
 
     if (pToExec)
     {
-        pToExec->Execute(hCaller, pwzParams);
+        pToExec->Execute(hCaller, pszParams);
         pToExec->Release();
 
         bReturn = TRUE;
     }
 
-    return bReturn;
+	return bReturn;
 }
-
 
 void BangManager::ClearBangCommands()
 {
-    Lock lock(m_cs);
+	Lock lock(m_cs);
 
-    BangMap::iterator iter = bang_map.begin();
+	BangMap::iterator iter = bang_map.begin();
 
-    while (iter != bang_map.end())
-    {
-        iter->second->Release();
-        ++iter;
-    }
+	while (iter != bang_map.end())
+	{
+		iter->second->Release();
+		++iter;
+	}
 
-    bang_map.clear();
+	bang_map.clear();
 }
 
 
-HRESULT BangManager::EnumBangs(LSENUMBANGSV2PROCW pfnCallback, LPARAM lParam) const
+HRESULT BangManager::EnumBangs(LSENUMBANGSPROC pfnCallback, LPARAM lParam) const
 {
     Lock lock(m_cs);
 
     HRESULT hr = S_OK;
 
-    for (const BangMap::value_type & value : bang_map)
+#if !defined(LS_NO_EXCEPTION)
+    try
     {
-        if (!pfnCallback(value.second->GetModule(), value.first, lParam))
+#endif /* LS_NO_EXCEPTION */
+        for (BangMap::const_iterator iter = bang_map.begin();
+             iter != bang_map.end(); ++iter)
         {
-            hr = S_FALSE;
-            break;
+            if (!pfnCallback(iter->first.c_str(), lParam))
+            {
+                hr = S_FALSE;
+                break;
+            }
         }
+#if !defined(LS_NO_EXCEPTION)
     }
+    catch (...)
+    {
+        hr = E_UNEXPECTED;
+    }
+#endif /* LS_NO_EXCEPTION */
 
     return hr;
 }

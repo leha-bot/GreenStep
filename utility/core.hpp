@@ -1,26 +1,25 @@
-//=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
 //
-// This is a part of the Litestep Shell source code.
+//  This is a part of the LiteStep Shell source code.
 //
-// Copyright (C) 1997-2015  LiteStep Development Team
+//  Copyright (C) 1997-2003 The LiteStep Development Team.
 //
-// This program is free software; you can redistribute it and/or
-// modify it under the terms of the GNU General Public License
-// as published by the Free Software Foundation; either version 2
-// of the License, or (at your option) any later version.
 //
-// This program is distributed in the hope that it will be useful,
-// but WITHOUT ANY WARRANTY; without even the implied warranty of
-// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-// GNU General Public License for more details.
+//  This program is free software; you can redistribute it and/or modify
+//  it under the terms of the GNU General Public License as published by
+//  the Free Software Foundation; either version 2 of the License, or
+//  (at your option) any later version.
 //
-// You should have received a copy of the GNU General Public License
-// along with this program; if not, write to the Free Software
-// Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
+//  This program is distributed in the hope that it will be useful,
+//  but WITHOUT ANY WARRANTY; without even the implied warranty of
+//  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+//  GNU General Public License for more details.
 //
-//=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
-#if !defined(CORE_HPP)
-#define CORE_HPP
+//  You should have received a copy of the GNU General Public License
+//  along with this program; if not, write to the Free Software
+//  Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
+//
+#ifndef LS_CORE_HPP_INCLUDED
+#define LS_CORE_HPP_INCLUDED
 
 #include "common.h"
 
@@ -31,25 +30,22 @@
 
 #include <shellapi.h>
 
-#include "shlobj.h"
-
 // mainly used for Path helper functions
-#define STRICT_CONST
 #define NO_SHLWAPI_STRFCNS
 #include <shlwapi.h>
 
-#define STRSAFE_NO_DEPRECATE
-#include <strsafe.h>
-
-// Now first thing after system includes, is our fixup for
-// the system headers.
-#include "fixup.h"
-
-// Add in debugging support for the rest of our files
-#include "debug.hpp"
-
-// Now items that generally most files should have.
+#include "../litestep/resource.h"
 #include "../lsapi/lsapi.h"
-#include "shellhlp.h"
+#include "localization.h"
+#include "safeptr.h"
+#include "safestr.h"
 
-#endif // CORE_HPP
+#ifdef __GNUC__
+typedef struct _SHELLHOOKINFO
+{
+    HWND hwnd;
+    RECT rc;
+} SHELLHOOKINFO, *PSHELLHOOKINFO, FAR *LPSHELLHOOKINFO;
+#endif
+
+#endif // !defined(LS_CORE_HPP_INCLUDED)

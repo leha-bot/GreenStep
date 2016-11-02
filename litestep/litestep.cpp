@@ -1,51 +1,52 @@
-//=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
-//
-// This is a part of the Litestep Shell source code.
-//
-// Copyright (C) 1997-2015  LiteStep Development Team
-//
-// This program is free software; you can redistribute it and/or
-// modify it under the terms of the GNU General Public License
-// as published by the Free Software Foundation; either version 2
-// of the License, or (at your option) any later version.
-//
-// This program is distributed in the hope that it will be useful,
-// but WITHOUT ANY WARRANTY; without even the implied warranty of
-// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-// GNU General Public License for more details.
-//
-// You should have received a copy of the GNU General Public License
-// along with this program; if not, write to the Free Software
-// Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
-//
-//=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
+/*
+This is a part of the LiteStep Shell Source code.
+
+Copyright (C) 1997-2005 The LiteStep Development Team
+
+This program is free software; you can redistribute it and/or
+modify it under the terms of the GNU General Public License
+as published by the Free Software Foundation; either version 2
+of the License, or (at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program; if not, write to the Free Software
+Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
+*/ 
+/****************************************************************************
+****************************************************************************/
+
 #include "litestep.h"
 
-// Services
-#include "COMService.h"
-#include "DDEService.h"
-#include "DDEStub.h"
-#include "ExplorerService.h"
-#include "FullscreenMonitor.h"
+// Misc Helpers
 #include "RecoveryMenu.h"
-#include "TrayService.h"
-
-// Managers
-#include "MessageManager.h"
-#include "ModuleManager.h"
-
-// Other
-#include "DataStore.h"
 #include "StartupRunner.h"
-#include "Utility.h"
 #include "../lsapi/lsapiInit.h"
 #include "../lsapi/ThreadedBangCommand.h"
 #include "../utility/macros.h"
-#include "../utility/core.hpp"
+#include "../utility/shellhlp.h"
+
+// Services
+#include "DDEService.h"
+#include "DDEStub.h"
+#include "TrayService.h"
+
+// Managers
+#include "HookManager.h"
+#include "MessageManager.h"
+#include "ModuleManager.h"
+
+// Misc Helpers
+#include "DataStore.h"
+
+// STL headers
 #include <algorithm>
-#include <functional>
-#include <Psapi.h>
-#include <WtsApi32.h>
+
+#include "../utility/core.hpp"
 
 
 // namespace stuff
@@ -53,15 +54,140 @@ using std::for_each;
 using std::mem_fun;
 
 
-//=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
-//
-// GetAppPath
-//
-static HRESULT GetAppPath(LPTSTR pszAppPath, DWORD cchAppPath)
-{
-    HRESULT hr = E_FAIL;
+// Parse the command line
+static bool ParseCmdLine(LPCSTR pszCmdLine);
+static HRESULT ExecuteCmdLineBang(LPCSTR pszCommand, LPCSTR pszArgs);
 
-#if defined(_DEBUG)
+static CLiteStep gLiteStep;
+static CHAR szAppPath[MAX_PATH];
+static CHAR szRcPath[MAX_PATH];
+
+enum StartupMode
+{
+    STARTUP_DONT_RUN  = -1,
+    STARTUP_DEFAULT   = 0,  // run only if first time
+    STARTUP_FORCE_RUN = TRUE
+};
+
+static int g_nStartupMode = STARTUP_DEFAULT;
+
+
+//
+// ExecuteCmdLineBang
+//
+static HRESULT ExecuteCmdLineBang(LPCSTR pszCommand, LPCSTR pszArgs)
+{
+    ASSERT_ISNOTNULL(pszCommand);
+
+    HRESULT hr = E_FAIL;
+    HWND hWnd = FindWindow(szMainWindowClass, szMainWindowTitle);
+
+    if (IsWindow(hWnd))
+    {
+        LMBANGCOMMAND bangCommand;
+        bangCommand.cbSize = sizeof(LMBANGCOMMAND);
+        bangCommand.hWnd = NULL;
+
+        hr = StringCchCopy(bangCommand.szCommand, MAX_BANGCOMMAND, pszCommand);
+
+        if (SUCCEEDED(hr))
+        {
+            if (pszArgs)
+            {
+                hr = StringCchCopy(bangCommand.szArgs, MAX_BANGARGS, pszArgs);
+            }
+            else
+            {
+                bangCommand.szArgs[0] = '\0';
+            }
+        }
+
+        if (SUCCEEDED(hr))
+        {
+            // Since we're a new, different litestep.exe process here, give the
+            // other, "real" instance the right to set the foreground window
+            TryAllowSetForegroundWindow(hWnd);
+
+            COPYDATASTRUCT cds = { 0 };
+            cds.dwData = LM_BANGCOMMAND;
+            cds.cbData = sizeof(LMBANGCOMMAND);
+            cds.lpData = &bangCommand;
+
+            SendMessage(hWnd, WM_COPYDATA, 0, (LPARAM)&cds);
+            hr = S_OK;
+        }
+    }
+
+    return hr;
+}
+
+
+//
+// ParseCmdLine(LPCSTR pszCmdLine)
+//
+static bool ParseCmdLine(LPCSTR pszCmdLine)
+{
+	if (IsValidStringPtr(pszCmdLine))
+	{
+        char szToken[MAX_LINE_LENGTH];
+        LPCSTR pszNextToken = pszCmdLine;
+
+        while (GetToken(pszNextToken, szToken, &pszNextToken, false))
+		{
+			switch (szToken[0])
+			{
+				case '-':
+				{
+					if (!_stricmp(szToken, "-nostartup"))
+					{
+						g_nStartupMode = STARTUP_DONT_RUN;
+					}
+                    else if (!_stricmp(szToken, "-startup"))
+                    {
+                        g_nStartupMode = STARTUP_FORCE_RUN;
+                    }                    
+				}
+				break;
+
+				case '!':
+				{
+					ExecuteCmdLineBang(szToken, pszNextToken);
+                    return false;
+				}
+				break;
+
+				default:
+				{
+					if (PathFileExists(szToken))
+					{
+						if (strchr(szToken, '\\'))
+						{
+							StringCchCopy(szRcPath, MAX_PATH, szToken);
+						}
+						else
+						{
+							PathCombine(szRcPath, szAppPath, szToken);
+						}
+					}
+				}
+				break;
+			}
+		}
+	}
+
+    return true;
+}
+
+
+//
+//
+//
+int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE /* hPrevInstance */,
+                   LPSTR lpCmdLine, int /* nCmdShow */)
+{
+    HRESULT hr = S_OK;
+    
+#ifdef _DEBUG
     typedef BOOL (WINAPI* IsDebuggerPresentProc)();
 
     IsDebuggerPresentProc fnIsDebuggerPresent = (IsDebuggerPresentProc)
@@ -70,120 +196,42 @@ static HRESULT GetAppPath(LPTSTR pszAppPath, DWORD cchAppPath)
     // If a debugger is attached use the current directory as base path
     if (fnIsDebuggerPresent && fnIsDebuggerPresent())
     {
-        if (GetCurrentDirectory(cchAppPath, pszAppPath))
+        if (GetCurrentDirectory(sizeof(szAppPath), szAppPath))
         {
             hr = S_OK;
         }
     }
     else
 #endif
-    // Otherwise use litestep.exe's location as base path
-    if (LSGetModuleFileName(NULL, pszAppPath, cchAppPath))
-    {
-        PathRemoveFileSpec(pszAppPath);
-        hr = S_OK;
-    }
-    else
-    {
-        hr = HrGetLastError();
-    }
+    // Determine our application's path
+	if (LSGetModuleFileName(hInstance, szAppPath, sizeof(szAppPath)))
+	{
+		PathRemoveFileSpec(szAppPath);
+	}
+	else
+	{
+		// something really crappy is going on.
+		return -1;
+	}
+	PathCombine(szRcPath, szAppPath, "step.rc");
 
-    return hr;
-}
-
-
-//=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
-//
-// SetWelcomeScreenEvent
-//
-void SetWelcomeScreenEvent()
-{
-    HANDLE hSwitchEvent = NULL;
-
-    if (IsVistaOrAbove())
+	// Parse command line, setting appropriate variables
+	if (!ParseCmdLine(lpCmdLine))
     {
-        hSwitchEvent = OpenEvent(
-            EVENT_MODIFY_STATE, FALSE, _T("ShellDesktopSwitchEvent"));
-    }
-    else
-    {
-        hSwitchEvent = OpenEvent(
-            EVENT_MODIFY_STATE, FALSE, _T("msgina: ShellReadyEvent"));
+        return 1;
     }
 
-    if (hSwitchEvent)
+    // Tell the Welcome Screen to close
+    // This has to be done before the first MessageBox call, else that box
+    // would pop up "under" the welcome screen
+    HANDLE hShellReadyEvent = OpenEvent(EVENT_MODIFY_STATE, FALSE,
+        "msgina: ShellReadyEvent");
+
+    if (hShellReadyEvent != NULL)
     {
-        VERIFY(SetEvent(hSwitchEvent));
-        VERIFY(CloseHandle(hSwitchEvent));
+        SetEvent(hShellReadyEvent);
+        CloseHandle(hShellReadyEvent);
     }
-}
-
-
-//=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
-//
-// SetDialogClassIcon
-//
-void SetDialogClassIcon(HINSTANCE hInstance, HICON hIcon)
-{
-    ASSERT(hIcon != NULL);
-    ASSERT(hInstance != NULL);
-
-    // SetClassLongPtr requires a window handle, so create a temporary window
-    HWND hwndTemp = CreateWindow(WC_DIALOG, NULL, 0,
-        0, 0, 0, 0, NULL, NULL, hInstance, NULL);
-
-    if (hwndTemp != NULL)
-    {
-        SetClassLongPtr(hwndTemp, GCLP_HICON, (LONG_PTR)hIcon);
-        DestroyWindow(hwndTemp);
-    }
-}
-
-
-//
-//
-//
-int StartLitestep(HINSTANCE hInst, WORD wStartFlags, LPCTSTR pszAltConfigFile)
-{
-    DbgSetCurrentThreadName("LS Main Thread");
-
-    TCHAR szAppPath[MAX_PATH] = { 0 };
-    TCHAR szRcPath[MAX_PATH] = { 0 };
-
-    if (FAILED(GetAppPath(szAppPath, COUNTOF(szAppPath))))
-    {
-        // something really crappy is going on.
-        return LRV_NO_APP_PATH;
-    }
-
-    if (wStartFlags & LSF_ALTERNATE_CONFIG)
-    {
-        StringCchCopy(szRcPath, COUNTOF(szRcPath), pszAltConfigFile);
-    }
-    else
-    {
-        PathCombine(szRcPath, szAppPath, L"step.rc");
-    }
-
-    if (IsVistaOrAbove())
-    {
-        // Starting with Vista (or Aero?) the shell needs to set the wallpaper.
-        // Otherwise the background remains black and SPI_GETDESKWALLPAPER
-        // returns an empty string. SETWALLPAPER_DEFAULT apparently causes
-        // SystemParametersInfo to look up the wallpaper in the registry.
-        VERIFY(SystemParametersInfo(
-            SPI_SETDESKWALLPAPER, 0, SETWALLPAPER_DEFAULT, 0));
-    }
-
-    //
-    // Close the welcome screen (if required)
-    // This has to be done before the first MessageBox call, otherwise
-    // the box would pop up under that screen
-    //
-    SetWelcomeScreenEvent();
-
-    // Change the icon of all dialogs to the LS icon
-    SetDialogClassIcon(hInst, LoadIcon(hInst, MAKEINTRESOURCE(IDI_LS)));
 
     // Make sure we don't quit if there's an app blocking shutdown.
     // Otherwise the user might be left without a shell if he chooses to abort
@@ -191,63 +239,46 @@ int StartLitestep(HINSTANCE hInst, WORD wStartFlags, LPCTSTR pszAltConfigFile)
     // 0x00FF is just below the application threshold
     SetProcessShutdownParameters(0x00FF, SHUTDOWN_NORETRY);
 
-    // If we can't find "step.rc", there's no point in proceeding
-    if (!PathFileExists(szRcPath))
+	// If we can't find "step.rc", there's no point in proceeding
+	if (!PathFileExists(szRcPath))
+	{
+		RESOURCE_STREX(hInstance, IDS_LITESTEP_ERROR2, resourceTextBuffer, MAX_LINE_LENGTH,
+		               "Unable to find the file \"%s\".\nPlease verify the location of the file, and try again.", szRcPath);
+		MessageBox(NULL, resourceTextBuffer, "LiteStep", MB_TOPMOST | MB_ICONEXCLAMATION);
+		return 2;
+	}
+
+	// Initialize the LSAPI.  Note: The LSAPI controls the bang and settings managers
+	// so they will be started at this point.
+	if (!LSAPIInitialize(szAppPath, szRcPath))
+	{
+		//TODO: Localize this.
+		MessageBox(NULL, "Failed to initialize the LiteStep API.", "LiteStep", MB_TOPMOST | MB_ICONEXCLAMATION);
+		return 3;
+	}
+
+	// Check for previous instance
+	HANDLE hMutex = CreateMutex(NULL, FALSE, "LiteStep");
+    
+	if (GetLastError() == ERROR_ALREADY_EXISTS)
+	{
+		// Prevent multiple instances of LiteStep
+		RESOURCE_STR(hInstance, IDS_LITESTEP_ERROR1,
+		             "A previous instance of LiteStep was detected.\nAre you sure you want to continue?");
+		if (IDNO == MessageBox(NULL, resourceTextBuffer, "LiteStep", MB_TOPMOST | MB_ICONINFORMATION | MB_YESNO | MB_DEFBUTTON2))
+		{
+			hr = E_ABORT;
+		}
+	}
+
+	if (SUCCEEDED(hr))
     {
-        RESOURCE_STREX(
-            hInst, IDS_LITESTEP_ERROR2, resourceTextBuffer, MAX_LINE_LENGTH,
-            L"Unable to find the file \"%ls\".\n"
-            L"Please verify the location of the file, and try again.", szRcPath);
-
-        RESOURCE_MSGBOX_F(L"LiteStep", MB_ICONERROR);
-
-        return LRV_NO_STEP;
+        hr = gLiteStep.Start(hInstance, g_nStartupMode);
     }
 
-    // Initialize the LSAPI.  Note: The LSAPI controls the bang and settings
-    // managers so they will be started at this point.
-    if (!LSAPIInitialize(szAppPath, szRcPath))
-    {
-        RESOURCE_MSGBOX(hInst, IDS_LSAPI_INIT_ERROR,
-            L"Failed to initialize the LiteStep API.", L"LiteStep");
+    CloseHandle(hMutex);
 
-        return LRV_LSAPI_FAIL;
-    }
-
-    // All child processes get this variable
-    VERIFY(SetEnvironmentVariable(_T("LitestepDir"), szAppPath));
-
-    int nReturn = 0;
-
-    CLiteStep liteStep;
-    HRESULT hr = liteStep.Start(hInst, wStartFlags);
-
-    if (SUCCEEDED(hr))
-    {
-        // if hr == S_FALSE the user aborted during startup
-        if (hr == S_OK)
-        {
-            nReturn = liteStep.Run();
-            hr = liteStep.Stop();
-        }
-    }
-    else
-    {
-        RESOURCE_STREX(hInst, IDS_LITESTEP_INIT_ERROR,
-            resourceTextBuffer, MAX_LINE_LENGTH,
-            L"Failed to initialize LiteStep.\n"
-            L"Please contact the LiteStep Development Team.\n\n"
-            L"Error code: 0x%.8X", hr);
-
-        RESOURCE_MSGBOX_F(L"LiteStep", MB_ICONERROR);
-    }
-
-    if (FAILED(hr))
-    {
-        nReturn = HRESULT_CODE(hr);
-    }
-
-    return nReturn;
+    return HRESULT_CODE(hr);
 }
 
 
@@ -255,20 +286,20 @@ int StartLitestep(HINSTANCE hInst, WORD wStartFlags, LPCTSTR pszAltConfigFile)
 // CLiteStep()
 //
 CLiteStep::CLiteStep()
-: m_pRecoveryMenu(nullptr),
-  m_pRegisterShellHook(nullptr),
-  m_hWtsDll(nullptr)
 {
-    m_hInstance = nullptr;
-    m_hMainWindow = nullptr;
-    WM_ShellHook = 0;
-    m_pModuleManager = nullptr;
-    m_pDataStoreManager = nullptr;
-    m_pMessageManager = nullptr;
-    m_bSignalExit = false;
-    m_pTrayService = nullptr;
-    m_pFullscreenMonitor = nullptr;
-    m_BlockRecycle = 0;
+	m_hInstance = NULL;
+    m_bRudeAppBit = false;
+    m_bAutoHideModules = false;
+    m_bAppIsFullScreen = false;
+	m_hMainWindow = NULL;
+	WM_ShellHook = 0;
+	m_pModuleManager = NULL;
+	m_pDataStoreManager = NULL;
+	m_pMessageManager = NULL;
+	m_bHookManagerStarted = false;
+	m_bSignalExit = false;
+	m_pTrayService = NULL;
+	m_BlockRecycle = 0;
 }
 
 
@@ -277,522 +308,294 @@ CLiteStep::CLiteStep()
 //
 CLiteStep::~CLiteStep()
 {
-    // do nothing
 }
 
 
 //
-// Start
+// Start(HINSTANCE hInstance, int nStartupMode)
 //
-HRESULT CLiteStep::Start(HINSTANCE hInstance, WORD wStartFlags)
+HRESULT CLiteStep::Start(HINSTANCE hInstance, int nStartupMode)
 {
-    HRESULT hr = E_FAIL;
+	HRESULT hr;
+	bool bUnderExplorer = false;
 
-    m_hInstance = hInstance;
-    m_pRecoveryMenu = new RecoveryMenu(hInstance);
+	m_hInstance = hInstance;
 
-    // Before anything else, start the recovery menu
-    if (m_pRecoveryMenu)
-    {
-        hr = m_pRecoveryMenu->Start();
-    }
-    else
-    {
-        hr = E_OUTOFMEMORY;
-    }
+	// Initialize OLE/COM
+	OleInitialize(NULL);
 
-    if (FAILED(hr))
-    {
-        delete m_pRecoveryMenu;
-        m_pRecoveryMenu = NULL;
+	// before anything else, start the recovery menu thread
+	DWORD dwRecoveryThreadID;
+	HANDLE hRecoveryThread = CreateThread(NULL, 0, RecoveryThreadProc,
+        (void*)m_hInstance, 0, &dwRecoveryThreadID);
 
-        return hr;
-    }
+	// configure the Win32 window manager to hide windows when they are minimized
+    MINIMIZEDMETRICS mm = { 0 };
+	mm.cbSize = sizeof(MINIMIZEDMETRICS);
 
-    // Initialize OLE/COM
-    hr = OleInitialize(NULL);
+	SystemParametersInfo(SPI_GETMINIMIZEDMETRICS, mm.cbSize, &mm, 0);
 
-    // Order of precedence: 1) shift key, 2) command line flags, 3) step.rc
+	if (!(mm.iArrange & ARW_HIDE))
+	{
+		mm.iArrange |= ARW_HIDE;
+		SystemParametersInfo(SPI_SETMINIMIZEDMETRICS, mm.cbSize, &mm, 0);
+	}
+
     if ((GetAsyncKeyState(VK_SHIFT) & 0x8000) ||
-        (GetRCBoolW(L"LSNoStartup", TRUE) &&
-        !(wStartFlags & LSF_FORCE_STARTUPAPPS)))
+        (nStartupMode != STARTUP_FORCE_RUN && GetRCBool("LSNoStartup", TRUE)))
     {
-        wStartFlags &= ~LSF_RUN_STARTUPAPPS;
+        nStartupMode = STARTUP_DONT_RUN;
     }
 
-    bool bUnderExplorer = false;
+    m_bAutoHideModules = GetRCBool("LSAutoHideModules", TRUE) ? true : false;
 
-    //
-    // Check for another shell
-    //
-    if (FindWindow(L"Shell_TrayWnd", NULL) != NULL)
-    {
-        if ((wStartFlags & LSF_CLOSE_EXPLORER) || GetRCBoolW(L"LSCloseExplorer", TRUE))
-        {
-            HWND hTrayWindow = FindWindow(L"Shell_TrayWnd", NULL);
+	// Check for explorer
+	if (FindWindow("Shell_TrayWnd", NULL)) // Running under Exploder
+	{
+		if (GetRCBool("LSNoShellWarning", FALSE))
+		{
+			RESOURCE_STR(hInstance, IDS_LITESTEP_ERROR3,
+				"LiteStep is not able to load as the system shell.\n"
+				"Another shell is already active.\n"
+				"\n"
+				"Continuing to load LiteStep will disable specific system\n"
+				"shell functions of LiteStep and some features will not\n"
+				"function properly such as icon notifications (systray),\n"
+				"the desktop and some task managers.\n"
+				"\n"
+				"To disable this message, place 'LSNoShellWarning' in\n"
+				"your step.rc.\n"
+				"\n"
+				"Continue to load LiteStep?\n");
+			RESOURCE_TITLE(hInstance, IDS_LITESTEP_TITLE_WARNING, "Warning");
+			if (MessageBox(NULL, resourceTextBuffer, resourceTitleBuffer, MB_YESNO | MB_ICONEXCLAMATION | MB_TOPMOST) == IDNO)
+			{
+				return E_ABORT;
+			}
+		}
+		bUnderExplorer = true;
+	}
 
-            // Determine the name of the current Shell
-            DWORD dwProcessID;
-            GetWindowThreadProcessId(hTrayWindow, &dwProcessID);
-            HANDLE hShellProc = OpenProcess(
-                PROCESS_QUERY_INFORMATION | SYNCHRONIZE,
-                FALSE,
-                dwProcessID
-                );
-
-            if (hShellProc != NULL)
-            {
-                TCHAR szProcessPath[MAX_PATH];
-                LSGetProcessImageFileName(hShellProc, szProcessPath, _countof(szProcessPath));
-                LPCTSTR pszPathName = PathFindFileName(szProcessPath);
-
-                if (_tcsicmp(pszPathName, _T("explorer.exe")) == 0)
-                {
-                    if (IsVistaOrAbove())
-                    {
-                        PostMessage(hTrayWindow, 0x5B4, 0, 0);
-                    }
-                    else if (IsOS(OS_XPORGREATER))
-                    {
-                        HWND hProgman = FindWindow(_T("Progman"), NULL);
-                        PostMessage(hProgman, WM_QUIT, 0, TRUE);
-                        PostMessage(hTrayWindow, WM_QUIT, 0, 0);
-                    }
-                    else
-                    {
-                        // Not supported
-                    }
-
-                    // Wait for the process to exit
-                    if (WaitForSingleObject(hShellProc, 3000) != WAIT_OBJECT_0) // Wait for at most 3 seconds.
-                    {
-                        // At this point, forcibly terminate the proc
-                        TerminateProcess(hShellProc, 0);
-
-                        // Wait another 3 seconds, max
-                        WaitForSingleObject(hShellProc, 3000);
-                    }
-                }
-
-                CloseHandle(hShellProc);
-            }
-        }
-    }
-
-    if (FindWindow(L"Shell_TrayWnd", NULL) != NULL)
-    {
-        if (GetRCBoolW(L"LSNoShellWarning", FALSE))
-        {
-            RESOURCE_STR(hInstance, IDS_LITESTEP_ERROR3,
-                L"LiteStep is not able to load as the system shell.\n"
-                L"Another shell is already active.\n"
-                L"\n"
-                L"Continuing to load LiteStep will disable specific system\n"
-                L"shell functions of LiteStep and some features will not\n"
-                L"function properly such as icon notifications (systray),\n"
-                L"the desktop and some task managers.\n"
-                L"\n"
-                L"To disable this message, place 'LSNoShellWarning' in\n"
-                L"your step.rc.\n"
-                L"\n"
-                L"Continue to load LiteStep?\n");
-
-            RESOURCE_TITLE(hInstance, IDS_LITESTEP_TITLE_WARNING, L"Warning");
-
-            if (RESOURCE_MSGBOX_F(
-                resourceTitleBuffer, MB_YESNO | MB_ICONEXCLAMATION) == IDNO)
-            {
-                return S_FALSE;
-            }
-        }
-
-        bUnderExplorer = true;
-    }
-
-    if (SUCCEEDED(hr))
-    {
-        hr = CreateMainWindow();
-    }
-
-    //
-    // Start up everything
-    //
-    if (SUCCEEDED(hr))
-    {
-        hr = _InitServices(!bUnderExplorer && GetRCBoolW(L"LSSetAsShell", TRUE));
-
-        if (SUCCEEDED(hr))
-        {
-            hr = _StartServices();
-
-            if (SUCCEEDED(hr))
-            {
-                hr = _InitManagers();
-
-                if (SUCCEEDED(hr))
-                {
-                    hr = _StartManagers();
-                }
-            }
-        }
-
-        if (SUCCEEDED(hr))
-        {
-            // Run startup items
-            if (wStartFlags & LSF_RUN_STARTUPAPPS)
-            {
-                BOOL bForceStartup = (wStartFlags & LSF_FORCE_STARTUPAPPS);
-
-                StartupRunner::Run(bForceStartup);
-            }
-
-            // On Vista, the shell is responsible for playing the startup sound
-            if (IsVistaOrAbove() && StartupRunner::IsFirstRunThisSession(
-                _T("LogonSoundHasBeenPlayed")))
-            {
-                LSPlaySystemSound(L"WindowsLogon");
-            }
-
-            // Undocumented call: Shell Loading Finished
-            SendMessage(GetDesktopWindow(), WM_USER, 0, 0);
-        }
-    }
-
-    return hr;
-}
-
-
-//=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
-//
-// Stop
-//
-HRESULT CLiteStep::Stop()
-{
-    _StopManagers();
-    _CleanupManagers();
-
-    _StopServices();
-    _CleanupServices();
-
-    if (m_hMainWindow)
-    {
-        DestroyMainWindow();
-    }
-
-    OleUninitialize();
-
-    if (m_pRecoveryMenu)
-    {
-        m_pRecoveryMenu->Stop();
-
-        delete m_pRecoveryMenu;
-        m_pRecoveryMenu = NULL;
-    }
-
-    return S_OK;
-}
-
-
-//=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
-//
-// Run
-// Main message pump
-//
-int CLiteStep::Run()
-{
-    TRACE("Entering main message loop.");
-
-    int nReturn = 0;
-    MSG message = { 0 };
-
-    //
-    // Note: check m_bSignalExit first, so that if MessageHandler()
-    // was called externally from a response to PeekMessage() we
-    // know right away if there was a WM_QUIT in the queue, and
-    // subsequently do not incorrectly call GetMessage() again.
-    //
-    while (GetMessage(&message, NULL, 0, 0) > 0)
-    {
-        MessageHandler(message);
-
-        // This only occurs in PeekAllMsgs()
-        if (m_bSignalExit)
-        {
-            m_bSignalExit = FALSE;
-            PostQuitMessage(m_nQuitMsg);
-        }
-    }
-
-    TRACE("Left main message loop. Last message: 0x%.4X (%p, %p)",
-        message.message, message.wParam, message.lParam);
-
-    if (message.message == WM_QUIT)
-    {
-        nReturn = (int)message.wParam;
-    }
-
-    return nReturn;
-}
-
-
-//=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
-//
-// CreateMainWindow
-//
-HRESULT CLiteStep::CreateMainWindow()
-{
-    HRESULT hr = E_FAIL;
-
-    //
-    // Register window class
-    //
+	// Register Window Class
     WNDCLASSEX wc = { 0 };
-    wc.cbSize = sizeof(wc);
-    wc.lpfnWndProc = CLiteStep::ExternalWndProc;
-    wc.hInstance = m_hInstance;
-    wc.hIcon = LoadIcon(m_hInstance, MAKEINTRESOURCE(IDI_LS));
-    wc.lpszClassName = szMainWindowClass;
+	wc.cbSize = sizeof(WNDCLASSEX);
+	wc.lpfnWndProc = CLiteStep::ExternalWndProc;
+	wc.hInstance = m_hInstance;
+	wc.lpszClassName = szMainWindowClass;
 
     if (!RegisterClassEx(&wc))
-    {
-        hr = HrGetLastError();
-        return hr;
-    }
+	{
+		RESOURCE_MSGBOX_T(hInstance, IDS_LITESTEP_ERROR4,
+		                  "Error registering main LiteStep window class.",
+		                  IDS_LITESTEP_TITLE_ERROR, "Error");
 
-    //
-    // Create main window
-    //
-    m_hMainWindow = CreateWindowEx(WS_EX_TOOLWINDOW,
+		return E_FAIL;
+	}
+
+	// Create our main window
+	m_hMainWindow = CreateWindowEx(WS_EX_TOOLWINDOW,
         szMainWindowClass, szMainWindowTitle,
         0, 0, 0, 0,
         0, NULL, NULL,
         m_hInstance,
         (void*)this);
 
-    if (m_hMainWindow)
-    {
-        // Set magic DWORD to prevent VWM from seeing main window
-        SetWindowLongPtr(m_hMainWindow, GWLP_USERDATA, magicDWord);
+	// Start up everything
+	if (m_hMainWindow)
+	{
+		// Set magic DWORD to prevent VWM from seeing main window
+		SetWindowLong (m_hMainWindow, GWL_USERDATA, magicDWord);
 
         // Set our window in LSAPI
         LSAPISetLitestepWindow(m_hMainWindow);
 
-        _RegisterShellNotifications(m_hMainWindow);
+        FARPROC (__stdcall * RegisterShellHook)(HWND, DWORD) = \
+            (FARPROC (__stdcall *)(HWND, DWORD))GetProcAddress(
+            GetModuleHandle("SHELL32.DLL"), (LPCSTR)((long)0x00B5));
 
-        hr = S_OK;
-    }
-    else
-    {
-        hr = HrGetLastError();
-    }
-
-    return hr;
-}
-
-
-//=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
-//
-// DestroyMainWindow
-//
-HRESULT CLiteStep::DestroyMainWindow()
-{
-    ASSERT(m_hMainWindow != NULL);
-
-    _UnregisterShellNotifications(m_hMainWindow);
-    LSAPISetLitestepWindow(NULL);
-
-    VERIFY(DestroyWindow(m_hMainWindow));
-    m_hMainWindow = NULL;
-
-    UnregisterClass(szMainWindowClass, m_hInstance);
-    return S_OK;
-}
-
-
-//
-//
-//
-void CLiteStep::PeekAllMsgs()
-{
-    MSG message;
-
-    while (PeekMessage(&message, NULL, 0, 0, PM_REMOVE))
-    {
-        if (WM_QUIT == message.message)
+        WM_ShellHook = RegisterWindowMessage("SHELLHOOK");
+		
+        if (RegisterShellHook)
         {
-            m_bSignalExit = true;
-            m_nQuitMsg = (int)message.wParam;
-            return;
-        }
+            RegisterShellHook(NULL, RSH_REGISTER);
 
-        MessageHandler(message);
-    }
-}
+            OSVERSIONINFO verInfo = { 0 };
+            verInfo.dwOSVersionInfoSize = sizeof(OSVERSIONINFO);
+            GetVersionEx(&verInfo);
 
-
-//
-//
-//
-void CLiteStep::MessageHandler(MSG &message)
-{
-    if (NULL == message.hwnd)
-    {
-        // Thread message
-        switch (message.message)
-        {
-        case LM_THREAD_BANGCOMMAND:
+            if (verInfo.dwPlatformId == VER_PLATFORM_WIN32_WINDOWS)
             {
-                ThreadedBangCommand* pInfo = \
-                    (ThreadedBangCommand*)message.wParam;
-
-                if (NULL != pInfo)
-                {
-                    pInfo->Execute();
-                    pInfo->Release(); // check BangCommand.cpp for the reason
-                }
+                // c0atzin's fix for 9x
+                RegisterShellHook(m_hMainWindow, RSH_REGISTER);
             }
-            break;
-
-        default:
+            else
             {
-                // do nothing
-            }
-            break;
-        }
-    }
-    else
-    {
-        TranslateMessage(&message);
-        DispatchMessage(&message);
-    }
-}
-
-
-//
-// _RegisterShellNotifications
-//
-void CLiteStep::_RegisterShellNotifications(HWND hWnd)
-{
-    //
-    // Configure the Win32 window manager to hide minimized windows
-    // This is necessary to enable WH_SHELL-style hooks,
-    // including RegisterShellHook
-    //
-    MINIMIZEDMETRICS mm = { 0 };
-    mm.cbSize = sizeof(MINIMIZEDMETRICS);
-
-    VERIFY(SystemParametersInfo(SPI_GETMINIMIZEDMETRICS, mm.cbSize, &mm, 0));
-
-    if (!(mm.iArrange & ARW_HIDE))
-    {
-        mm.iArrange |= ARW_HIDE;
-        VERIFY(SystemParametersInfo(
-            SPI_SETMINIMIZEDMETRICS, mm.cbSize, &mm, 0));
-    }
-
-    //
-    // Register for shell hook notifications
-    //
-    WM_ShellHook = RegisterWindowMessage(L"SHELLHOOK");
-
-    m_pRegisterShellHook = (RSHPROC)GetProcAddress(
-        GetModuleHandle(_T("SHELL32.DLL")), (LPCSTR)((long)0x00B5));
-
-    if (m_pRegisterShellHook)
-    {
-        m_pRegisterShellHook(NULL, RSH_REGISTER);
-
-        if (IsOS(OS_WINDOWS))
-        {
-            // c0atzin's fix for 9x
-            m_pRegisterShellHook(hWnd, RSH_REGISTER);
-        }
-        else
-        {
-            m_pRegisterShellHook(hWnd, RSH_TASKMAN);
-        }
-    }
-
-    //
-    // Register for session change notifications
-    //
-    if (IsOS(OS_XPORGREATER))
-    {
-        ASSERT(m_hWtsDll == NULL);
-        m_hWtsDll = LoadLibrary(_T("WtsApi32.dll"));
-
-        if (m_hWtsDll)
-        {
-            typedef BOOL (WINAPI* WTSRSNPROC)(HWND, DWORD);
-
-            WTSRSNPROC pWTSRegisterSessionNotification = (WTSRSNPROC)
-                GetProcAddress(m_hWtsDll, "WTSRegisterSessionNotification");
-
-            if (pWTSRegisterSessionNotification)
-            {
-                // This needs to be fixed: We should wait for
-                // Global\TermSrvReadyEvent before calling this.
-                VERIFY(pWTSRegisterSessionNotification(
-                    hWnd, NOTIFY_FOR_THIS_SESSION));
+                RegisterShellHook(m_hMainWindow, RSH_TASKMAN);
             }
         }
-        else
+
+		// Set Shell Window
+		if (!bUnderExplorer && (GetRCBool("LSSetAsShell", TRUE)))
+		{
+			FARPROC (__stdcall * SetShellWindow)(HWND) = NULL;
+			SetShellWindow = (FARPROC (__stdcall *)(HWND))GetProcAddress(GetModuleHandle("USER32.DLL"), "SetShellWindow");
+			if (SetShellWindow)
+			{
+				SetShellWindow(m_hMainWindow);
+			}
+		}
+
+		hr = _InitServices();
+		if (SUCCEEDED(hr))
+		{
+			hr = _StartServices();
+			// Quietly swallow service errors... in the future.. do something
+		}
+
+        hr = _InitManagers();
+        if (SUCCEEDED(hr))
         {
-            TRACE("Failed to load WtsApi32.dll");
+            hr = _StartManagers();
+            // Quietly swallow manager errors... in the future.. do something
         }
+        
+		// Run startup items
+		if (nStartupMode != STARTUP_DONT_RUN)
+		{
+			DWORD dwThread;
+			
+            CloseHandle(CreateThread(NULL, 0, StartupRunner::Run,
+                (void*)nStartupMode, 0, &dwThread));
+		}
+
+        // Undocumented call: Shell Loading Finished
+        SendMessage(GetDesktopWindow(), WM_USER, 0, 0);
+        
+        // Main message pump
+        MSG message;
+        /* Note: check m_bSignalExit first, so that if MessageHandler()
+         * was called externally from a response to PeekMessage() we
+         * know right away if there was a WM_QUIT in the queue, and
+         * subsequently do not incorrectly call GetMessage() again. */
+        while (!m_bSignalExit && GetMessage(&message, 0, 0, 0) > 0)
+        {
+            MessageHandler(message);
+		}
+
+		if (RegisterShellHook)
+		{
+			RegisterShellHook(m_hMainWindow, RSH_UNREGISTER);
+		}
+
+		_StopManagers();
+		_CleanupManagers();
+
+		_StopServices();
+		_CleanupServices();
+
+		// Destroy main window
+		DestroyWindow(m_hMainWindow);
+		m_hMainWindow = NULL;
+		LSAPISetLitestepWindow(NULL);
+	}
+	else
+	{
+		RESOURCE_MSGBOX_T(hInstance, IDS_LITESTEP_ERROR5,
+		                  "Error creating LiteStep main application window.",
+		                  IDS_LITESTEP_TITLE_ERROR, "Error");
+	}
+
+	// Unreg class
+	UnregisterClass(szMainWindowClass, m_hInstance);
+
+	// Uninitialize OLE/COM
+	OleUninitialize();
+
+	// close the recovery thread: tell the thread to quit
+    PostThreadMessage(dwRecoveryThreadID, WM_QUIT, 0, 0);
+    // wait until the thread is done quitting, at most three seconds though
+    if (WaitForSingleObject(hRecoveryThread, 3000) == WAIT_TIMEOUT)
+    {
+        TerminateThread(hRecoveryThread, 0);
     }
+    // close the thread handle
+    CloseHandle(hRecoveryThread);
+
+	return S_OK;
 }
 
-
 //
-// _UnregisterShellNotifications
 //
-void CLiteStep::_UnregisterShellNotifications(HWND hWnd)
+//
+int CLiteStep::MessageHandler(MSG &message)
 {
-    ASSERT(IsWindow(hWnd));
+	if(WM_QUIT == message.message)
+	{
+		m_bSignalExit = true;
+		return 0;
+	}
 
-    if (m_hWtsDll)
-    {
-        typedef BOOL (WINAPI* WTSURSNPROC)(HWND);
+#if !defined(LS_NO_EXCEPTION)
+	try
+	{
+#endif /* LS_NO_EXCEPTION */
+		if (NULL == message.hwnd)
+		{
+			// Thread message
+			switch (message.message)
+			{
+				case LM_THREAD_BANGCOMMAND:
+				{
+					ThreadedBangCommand* pInfo = \
+						(ThreadedBangCommand*)message.wParam;
 
-        WTSURSNPROC pWTSUnRegisterSessionNotification = (WTSURSNPROC)
-            GetProcAddress(m_hWtsDll, "WTSUnRegisterSessionNotification");
+					if (NULL != pInfo)
+					{
+						pInfo->Execute();
+						pInfo->Release(); // check BangCommand.cpp for the reason
+					}
+				}
+				break;
 
-        if (pWTSUnRegisterSessionNotification)
-        {
-            VERIFY(pWTSUnRegisterSessionNotification(hWnd));
-        }
+				default:
+				break;
+			}
+		}
+		else
+		{
+			TranslateMessage(&message);
+			DispatchMessage (&message);
+		}
+#if !defined(LS_NO_EXCEPTION)
+	}
+	catch(...)
+	{
+		// MessageBox(m_hMainWindow, "exception", "oops", MB_OK | MB_TOPMOST | MB_ICONEXCLAMATION);
+	}
+#endif /* LS_NO_EXCEPTION */
 
-        VERIFY(FreeLibrary(m_hWtsDll));
-        m_hWtsDll = NULL;
-    }
-
-    if (m_pRegisterShellHook)
-    {
-        m_pRegisterShellHook(hWnd, RSH_UNREGISTER);
-    }
+	return 0;
 }
-
 
 //
 //
 //
 LRESULT CALLBACK CLiteStep::ExternalWndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
 {
-    static CLiteStep* pLiteStep = NULL;
+	static CLiteStep* pLiteStep = NULL;
 
-    if (uMsg == WM_NCCREATE)
-    {
+	if (uMsg == WM_CREATE)
+	{
         pLiteStep = static_cast<CLiteStep*>(
             reinterpret_cast<CREATESTRUCT*>(lParam)->lpCreateParams);
 
-        ASSERT(NULL != pLiteStep);
-    }
+        ASSERT_ISNOTNULL(pLiteStep);
+	}
 
-    if (pLiteStep)
-    {
+	if (pLiteStep)
+	{
         return pLiteStep->InternalWndProc(hWnd, uMsg, wParam, lParam);
-    }
+	}
 
     return DefWindowProc(hWnd, uMsg, wParam, lParam);
 }
@@ -803,175 +606,177 @@ LRESULT CALLBACK CLiteStep::ExternalWndProc(HWND hWnd, UINT uMsg, WPARAM wParam,
 //
 LRESULT CLiteStep::InternalWndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
 {
-    LRESULT lReturn = 0;
-
+    LRESULT lReturn = FALSE;
+    
     switch (uMsg)
-    {
-    case WM_SETTINGCHANGE:
-        {
-            if (lParam && _tcscmp((LPCTSTR)lParam, _T("Environment")) == 0)
-            {
-                UpdateEnvironmentVariables();
-            }
-        }
-        break;
+	{
+		case WM_KEYDOWN:
+		case WM_SYSCOMMAND:
+		{
+			switch (wParam)
+			{
+				case LM_SHUTDOWN:
+				case SC_CLOSE:
+				{
+					ParseBangCommand(hWnd, "!ShutDown", NULL);
+				}
+				break;
 
-    case WM_KEYDOWN:
-    case WM_SYSCOMMAND:
-        {
-            switch (wParam)
-            {
-            case LM_SHUTDOWN:
-            case SC_CLOSE:
-                {
-                    ParseBangCommandW(hWnd, L"!ShutDown", NULL);
-                }
-                break;
+				default:
+				{
+					lReturn = DefWindowProc(hWnd, uMsg, wParam, lParam);
+				}
+				break;
+			}       
+		}
+		break;
 
-            default:
-                {
-                    lReturn = DefWindowProc(hWnd, uMsg, wParam, lParam);
-                }
-                break;
-            }
-        }
-        break;
+		case WM_QUERYENDSESSION:
+		case WM_ENDSESSION:
+		{
+			lReturn = TRUE;
+		}
+		break;
 
-        break;
+		case WM_TIMER:
+		{
+			if (LT_RUDEAPP == wParam)
+			{
+				KillTimer(hWnd, wParam);
+				if (m_bAppIsFullScreen != \
+					_IsFullScreenActive(GetForegroundWindow()))
+				{ 
+					_HandleFullScreenApp(!m_bAppIsFullScreen);
+				}
+			}
+		}
+		break;
 
-    case LM_SYSTRAYREADY:
-        {
-            if (m_pTrayService)
-            {
-                lReturn = (LRESULT)m_pTrayService->SendSystemTray();
-            }
-        }
-        break;
+		case LM_SYSTRAYREADY:
+		{
+			if (m_pTrayService)
+			{
+				lReturn = (LRESULT)m_pTrayService->SendSystemTray();
+			}
+		}
+		break;
 
-    case LM_SAVEDATA:
-        {
-            WORD wIdent = HIWORD(wParam);
-            WORD wLength = LOWORD(wParam);
-            void *pvData = (void *)lParam;
-            if ((pvData != NULL) && (wLength > 0))
-            {
-                if (m_pDataStoreManager == NULL)
-                {
-                    m_pDataStoreManager = new DataStore();
-                }
-                if (m_pDataStoreManager)
-                {
-                    lReturn = m_pDataStoreManager->StoreData(
-                        wIdent, pvData, wLength);
-                }
-            }
-        }
-        break;
+		case LM_SAVEDATA:
+		{
+			WORD wIdent = HIWORD(wParam);
+			WORD wLength = LOWORD(wParam);
+			void *pvData = (void *)lParam;
+			if ((pvData != NULL) && (wLength > 0))
+			{
+				if (m_pDataStoreManager == NULL)
+				{
+					m_pDataStoreManager = new DataStore();
+				}
+				if (m_pDataStoreManager)
+				{
+					lReturn = m_pDataStoreManager->StoreData(wIdent, pvData, wLength);
+				}
+			}
+		}
+		break;
 
-    case LM_RESTOREDATA:
-        {
-            WORD wIdent = HIWORD(wParam);
-            WORD wLength = LOWORD(wParam);
-            void *pvData = (void *)lParam;
-            if ((pvData != NULL) && (wLength > 0))
-            {
-                if (m_pDataStoreManager)
-                {
-                    lReturn = m_pDataStoreManager->ReleaseData(
-                        wIdent, pvData, wLength);
+		case LM_RESTOREDATA:
+		{
+			WORD wIdent = HIWORD(wParam);
+			WORD wLength = LOWORD(wParam);
+			void *pvData = (void *)lParam;
+			if ((pvData != NULL) && (wLength > 0))
+			{
+				if (m_pDataStoreManager)
+				{
+					lReturn = m_pDataStoreManager->ReleaseData(wIdent, pvData, wLength);
+					if (m_pDataStoreManager->Count() == 0)
+					{
+						delete m_pDataStoreManager;
+						m_pDataStoreManager = NULL;
+					}
+				}
+			}
+		}
+		break;
 
-                    if (m_pDataStoreManager->Count() == 0)
-                    {
-                        delete m_pDataStoreManager;
-                        m_pDataStoreManager = NULL;
-                    }
-                }
-            }
-        }
-        break;
+		case LM_GETLSOBJECT:
+		case LM_WINDOWLIST:
+		case LM_MESSAGEMANAGER:
+		case LM_DATASTORE:
+		{
+			; // Obsolete Message, return 0
+		}
+		break;
 
-    case LM_ENUMREVIDS:
+        case LM_ENUMREVIDS:
         {
             HRESULT hr = E_FAIL;
-
+            
             if (m_pMessageManager)
             {
-                hr = _EnumRevIDs((LSENUMREVIDSPROCW)wParam, lParam);
+                hr = _EnumRevIDs((LSENUMREVIDSPROC)wParam, lParam);
             }
 
             return hr;
         }
         break;
 
-    case LM_ENUMMODULES:
+        case LM_ENUMMODULES:
         {
             HRESULT hr = E_FAIL;
 
             if (m_pModuleManager)
             {
-                hr = m_pModuleManager->EnumModules((LSENUMMODULESPROCW)wParam,
+                hr = m_pModuleManager->EnumModules((LSENUMMODULESPROC)wParam,
                     lParam);
             }
-
+            
             return hr;
         }
         break;
 
-    case LM_ENUMPERFORMANCE:
-        {
-            HRESULT hr = E_FAIL;
+        case LM_RECYCLE:
+		{
+			switch (wParam)
+			{
+				case LR_RECYCLE:
+				{
+					_Recycle();
+				}
+				break;
 
-            if (m_pModuleManager)
-            {
-                hr = m_pModuleManager->EnumPerformance((LSENUMPERFORMANCEPROCW)wParam,
-                    lParam);
-            }
+				case LR_LOGOFF:
+				{
+					if (ExitWindowsEx(EWX_LOGOFF, 0))
+					{
+						PostQuitMessage(0);
+					}
+				}
+				break;
 
-            return hr;
-        }
-        break;
+				case LR_QUIT:
+				{
+					PostQuitMessage(0);
+				}
+				break;
 
-    case LM_RECYCLE:
-        {
-            switch (wParam)
-            {
-            case LR_RECYCLE:
-                {
-                    _Recycle();
-                }
-                break;
-
-            case LR_LOGOFF:
-                {
-                    if (ExitWindowsEx(EWX_LOGOFF, 0))
-                    {
-                        PostQuitMessage(0);
-                    }
-                }
-                break;
-
-            case LR_QUIT:
-                {
-                    PostQuitMessage(0);
-                }
-                break;
-
-            case LR_EXPLORER:
-                {
-                    PostQuitMessage(4);
-                }
-                break;
-
-            default:  // wParam == LR_MSSHUTDOWN
-                {
-                    LSShutdownDialog(m_hMainWindow);
-                }
+				default:  // wParam == LR_MSSHUTDOWN
+				{
+					FARPROC (__stdcall * MSWinShutdown)(HWND) = NULL;
+					MSWinShutdown = (FARPROC (__stdcall *)(HWND))GetProcAddress(GetModuleHandle("SHELL32.DLL"), (LPCSTR)((long)0x003C));
+					if (MSWinShutdown)
+					{
+						MSWinShutdown(m_hMainWindow); // shouldn't this be NULL?
+                        // Could also use the now-documented RestartDialog(Ex)
+					}
+				}
                 break;
             }
         }
         break;
-
-    case LM_RELOADMODULEA:
+        
+        case LM_RELOADMODULE:
         {
             if (m_pModuleManager)
             {
@@ -981,46 +786,21 @@ LRESULT CLiteStep::InternalWndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM l
                     // wants to reload it shouldn't need the core to do that
                     m_pModuleManager->ReloadModule((HINSTANCE)wParam);
                 }
-                else  // (lParam & LMM_PATH)
+                else
                 {
                     LPCSTR pszPath = (LPCSTR)wParam;
-
-                    if (pszPath != nullptr)
+                    
+                    if (IsValidStringPtr(pszPath))
                     {
-                        std::unique_ptr<wchar_t> wzPath(WCSFromMBS(pszPath));
-                        m_pModuleManager->QuitModule(wzPath.get());
-                        m_pModuleManager->LoadModule(wzPath.get(), (DWORD)lParam);
+                        m_pModuleManager->QuitModule(pszPath);
+                        m_pModuleManager->LoadModule(pszPath, (DWORD)lParam);
                     }
                 }
             }
         }
         break;
 
-    case LM_RELOADMODULEW:
-        {
-            if (m_pModuleManager)
-            {
-                if (lParam & LMM_HINSTANCE)
-                {
-                    // not sure if this feature is needed... if a module
-                    // wants to reload it shouldn't need the core to do that
-                    m_pModuleManager->ReloadModule((HINSTANCE)wParam);
-                }
-                else  // (lParam & LMM_PATH)
-                {
-                    LPCWSTR pwzPath = (LPCWSTR)wParam;
-
-                    if (pwzPath != nullptr)
-                    {
-                        m_pModuleManager->QuitModule(pwzPath);
-                        m_pModuleManager->LoadModule(pwzPath, (DWORD)lParam);
-                    }
-                }
-            }
-        }
-        break;
-
-    case LM_UNLOADMODULEA:
+        case LM_UNLOADMODULE:
         {
             if (m_pModuleManager)
             {
@@ -1028,134 +808,105 @@ LRESULT CLiteStep::InternalWndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM l
                 {
                     m_pModuleManager->QuitModule((HINSTANCE)wParam);
                 }
-                else // (lParam & LMM_PATH)
+                else
                 {
                     LPCSTR pszPath = (LPCSTR)wParam;
-
-                    if (pszPath != nullptr)
+                    
+                    if (IsValidStringPtr(pszPath))
                     {
-                        m_pModuleManager->QuitModule(MBSTOWCS(pszPath));
+                        m_pModuleManager->QuitModule(pszPath);
                     }
                 }
             }
         }
-        break;
+		break;
 
-    case LM_UNLOADMODULEW:
-        {
-            if (m_pModuleManager)
-            {
-                if (lParam & LMM_HINSTANCE)
-                {
-                    m_pModuleManager->QuitModule((HINSTANCE)wParam);
-                }
-                else // (lParam & LMM_PATH)
-                {
-                    LPCWSTR pwzPath = (LPCWSTR)wParam;
+        case LM_BANGCOMMAND:
+		{
+			PLMBANGCOMMAND plmbc = (PLMBANGCOMMAND)lParam;
 
-                    if (pwzPath != nullptr)
-                    {
-                        m_pModuleManager->QuitModule(pwzPath);
-                    }
-                }
-            }
-        }
-        break;
+			if (IsValidReadPtr(plmbc))
+			{
+				if (plmbc->cbSize == sizeof(LMBANGCOMMAND))
+				{
+					lReturn = ParseBangCommand(plmbc->hWnd, plmbc->szCommand, plmbc->szArgs);
+				}
+			}
+		}
+		break;
 
-    case LM_BANGCOMMANDA:
-        {
-            PLMBANGCOMMANDA plmbc = (PLMBANGCOMMANDA)lParam;
+		case WM_COPYDATA:
+		{
+			PCOPYDATASTRUCT pcds = (PCOPYDATASTRUCT)lParam;
 
-            if (plmbc != nullptr)
-            {
-                if (plmbc->cbSize == sizeof(LMBANGCOMMANDA))
-                {
-                    lReturn = ParseBangCommandA(plmbc->hWnd,
-                        plmbc->szCommand, plmbc->szArgs);
-                }
-            }
-        }
-        break;
+			switch (pcds->dwData)
+			{
+				case LM_BANGCOMMAND:
+				{
+					lReturn = SendMessage(hWnd, LM_BANGCOMMAND, 0, (LPARAM)pcds->lpData);
+				}
+				break;
+				
+				default:
+				break;
+			}
+		}
+		break;
 
-    case LM_BANGCOMMANDW:
-        {
-            PLMBANGCOMMANDW plmbc = (PLMBANGCOMMANDW)lParam;
+		case LM_REGISTERHOOKMESSAGE:
+		{
+			if (!m_bHookManagerStarted)
+			{
+				m_bHookManagerStarted = StartHookManager(m_hInstance);
+			}
+			if (m_bHookManagerStarted)
+			{
+				lReturn = RegisterHookMessage((UINT)wParam, (HOOKCALLBACKPROC)lParam);
+			}
+		}
+		break;
 
-            if (plmbc != nullptr)
-            {
-                if (plmbc->cbSize == sizeof(LMBANGCOMMANDW))
-                {
-                    lReturn = ParseBangCommandW(plmbc->hWnd,
-                        plmbc->wzCommand, plmbc->wzArgs);
-                }
-            }
-        }
-        break;
+		case LM_UNREGISTERHOOKMESSAGE:
+		{
+			if (m_bHookManagerStarted)
+			{
+				if (UnregisterHookMessage((UINT)wParam, (HOOKCALLBACKPROC)lParam) == 0)
+				{
+					StopHookManager();
+					m_bHookManagerStarted = false;
+				}
+			}
+		}
+		break;
 
-    case WM_COPYDATA:
-        {
-            PCOPYDATASTRUCT pcds = (PCOPYDATASTRUCT)lParam;
+		case LM_REGISTERMESSAGE:     // Message Handler Message
+		{
+			if (m_pMessageManager)
+			{
+				m_pMessageManager->AddMessages((HWND)wParam, (UINT *)lParam);
+			}
+		}
+		break;
 
-            switch (pcds->dwData)
-            {
-            case LM_BANGCOMMANDA:
-                {
-                    lReturn = SendMessage(hWnd, LM_BANGCOMMANDA,
-                        0, (LPARAM)pcds->lpData);
-                }
-                break;
+		case LM_UNREGISTERMESSAGE:     // Message Handler Message
+		{
+			if (m_pMessageManager)
+			{
+				m_pMessageManager->RemoveMessages((HWND)wParam, (UINT *)lParam);
+			}
+		}
+		break;
 
-            case LM_BANGCOMMANDW:
-                {
-                    lReturn = SendMessage(hWnd, LM_BANGCOMMANDW,
-                        0, (LPARAM)pcds->lpData);
-                }
-                break;
-
-            default:
-                {
-                    // do nothing
-                }
-                break;
-            }
-        }
-        break;
-
-    case LM_REGISTERMESSAGE:     // Message Handler Message
-        {
-            if (m_pMessageManager)
-            {
-                m_pMessageManager->AddMessages((HWND)wParam, (UINT *)lParam);
-            }
-        }
-        break;
-
-    case LM_UNREGISTERMESSAGE:     // Message Handler Message
-        {
-            if (m_pMessageManager)
-            {
-                m_pMessageManager->RemoveMessages((HWND)wParam, (UINT *)lParam);
-            }
-        }
-        break;
-
-    case WM_WTSSESSION_CHANGE:
-        {
-            lReturn = _HandleSessionChange((DWORD)wParam, (DWORD)lParam);
-        }
-        break;
-
-    default:
-        {
-            // Translate Shell Hook messages to LM_SHELLHOOK (ShellProc format).
+		default:
+		{
             if (uMsg == WM_ShellHook)
             {
                 WORD wHookCode  = (LOWORD(wParam) & 0x00FF);
                 WORD wExtraBits = (LOWORD(wParam) & 0xFF00);
-
+                
                 // Convert to an LM_SHELLHOOK message
-                uMsg = LM_SHELLHOOK + wHookCode;
-
+                uMsg = 9500 + wHookCode;
+                
                 if (uMsg == LM_APPCOMMAND)
                 {
                     wParam = NULL;
@@ -1164,7 +915,7 @@ LRESULT CLiteStep::InternalWndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM l
                 else if (uMsg == LM_GETMINRECT)
                 {
                     SHELLHOOKINFO* pshi = (SHELLHOOKINFO*)lParam;
-
+                    
                     wParam = (WPARAM)pshi->hwnd;
                     lParam = (LPARAM)&pshi->rc;
                 }
@@ -1173,66 +924,92 @@ LRESULT CLiteStep::InternalWndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM l
                     wParam = (WPARAM)lParam;
                     lParam = (LPARAM)wExtraBits;
                 }
-            }
-
-            // WM_APP, LM_XYZ, and registered messages are all >= WM_USER
-            if (uMsg >= WM_USER)
-            {
-                if (m_pMessageManager &&
-                    m_pMessageManager->HandlerExists(uMsg))
+                
+                // Handle fullscreen windows
+                if (uMsg == LM_WINDOWACTIVATED)
                 {
-                    lReturn = \
-                        m_pMessageManager->SendMessage(uMsg, wParam, lParam);
-                    break;
+                    /*
+                     * Note: The ShellHook will always set the HighBit when there
+                     * is any full screen app on the desktop, even if it does not
+                     * have focus.  Because of this, we have no easy way to tell
+                     * if the currently activated app is full screen or not.
+                     * This is worked around by checking the window's actual size
+                     * against the screen size.  The correct behavior for this is
+                     * to hide when a full screen app is active, and to show when
+                     * a non full screen app is active.
+                     */
+                    m_bRudeAppBit = 0 != lParam;
+                    KillTimer(m_hMainWindow, LT_RUDEAPP);
+                    
+                    if (m_bRudeAppBit && !m_bAppIsFullScreen)
+                    {
+                        if (_IsFullScreenActive((HWND)wParam))
+                        { 
+                            _HandleFullScreenApp(true);
+                        }
+                    }
+                    else if (m_bAppIsFullScreen)
+                    {
+                        if (!m_bRudeAppBit || !_IsFullScreenActive((HWND)wParam))
+                        {
+                            _HandleFullScreenApp(false);
+                        }
+                    }
+                    
+                    // If we have been told there is a Rude App, but we did not
+                    // detect one, then wait a second, and check the window
+                    // in the foreground at that time.
+                    if (!m_bAppIsFullScreen && m_bRudeAppBit)
+                    {
+                        SetTimer(m_hMainWindow, LT_RUDEAPP, 1000, NULL);
+                    }
+                }
+                else if (uMsg == LM_WINDOWDESTROYED)
+                {
+                    if (m_bAppIsFullScreen)
+                    {
+                        // If the FS window was just destroyed, then handle it.
+                        if(!_IsFullScreenActive(GetForegroundWindow()))
+                        {
+                            _HandleFullScreenApp(false);
+                        }
+                    }
                 }
             }
-            lReturn = DefWindowProc(hWnd, uMsg, wParam, lParam);
-        }
-        break;
-    }
+            
+            if (m_pMessageManager && m_pMessageManager->HandlerExists(uMsg))
+			{
+                lReturn = m_pMessageManager->SendMessage(uMsg, wParam, lParam);
+                break;
+			}
+			lReturn = DefWindowProc (hWnd, uMsg, wParam, lParam);
+		}
+		break;
+	}
 
     return lReturn;
 }
 
 
 //
-// _HandleSessionChange
-// Handler for WM_WTSSESSION_CHANGE messages
-//
-LRESULT CLiteStep::_HandleSessionChange(DWORD dwCode, DWORD /* dwSession */)
-{
-    if (dwCode == WTS_SESSION_LOCK)
-    {
-        LSPlaySystemSound(L"WindowsLogoff");
-    }
-    else if (dwCode == WTS_SESSION_UNLOCK)
-    {
-        LSPlaySystemSound(L"WindowsLogon");
-    }
-
-    return 0;
-}
-
-
-//
 // _InitServies()
 //
-HRESULT CLiteStep::_InitServices(bool bSetAsShell)
+HRESULT CLiteStep::_InitServices()
 {
-    IService* pService = nullptr;
+    IService* pService = NULL;
 
-    //
+	//
     // DDE Service
     //
-    if (GetRCBoolW(L"LSUseSystemDDE", TRUE))
+    if (GetRCBool("LSUseSystemDDE", TRUE))
     {
         // M$ DDE
-        pService = new (std::nothrow) DDEStub();
+        pService = new DDEStub();
     }
     else
     {
         // liteman
-        pService = new (std::nothrow) DDEService();
+        pService = new DDEService();
     }
 
     if (pService)
@@ -1247,10 +1024,10 @@ HRESULT CLiteStep::_InitServices(bool bSetAsShell)
     //
     // Tray Service
     //
-    if (GetRCBoolW(L"LSDisableTrayService", FALSE))
+    if (GetRCBool("LSDisableTrayService", FALSE))
     {
-        m_pTrayService = new (std::nothrow) TrayService();
-
+        m_pTrayService = new TrayService();
+        
         if (m_pTrayService)
         {
             m_Services.push_back(m_pTrayService);
@@ -1261,57 +1038,7 @@ HRESULT CLiteStep::_InitServices(bool bSetAsShell)
         }
     }
 
-    //
-    // Explorer service
-    //
-    if (bSetAsShell)
-    {
-#if defined(LS_USE_EXPLORER_SERVICE)
-        pService = new (std::nothrow) ExplorerService();
-
-        if (pService)
-        {
-            m_Services.push_back(pService);
-        }
-        else
-        {
-            return E_OUTOFMEMORY;
-        }
-#else
-        _SetShellWindow(m_hMainWindow);
-#endif
-    }
-
-    //
-    // COM Service
-    //
-    pService = new (std::nothrow) COMService();
-
-    if (pService)
-    {
-        m_Services.push_back(pService);
-    }
-    else
-    {
-        return E_OUTOFMEMORY;
-    }
-
-    //
-    // FullscreenMonitor service
-    //
-    m_pFullscreenMonitor = new (std::nothrow) FullscreenMonitor();
-
-    if (m_pFullscreenMonitor)
-    {
-        m_Services.push_back(m_pFullscreenMonitor);
-    }
-    else
-    {
-        return E_OUTOFMEMORY;
-    }
-
-
-    return S_OK;
+	return S_OK;
 }
 
 
@@ -1322,7 +1049,7 @@ HRESULT CLiteStep::_StartServices()
 {
     // use std::transform to add error checking to this
     for_each(m_Services.begin(), m_Services.end(), mem_fun(&IService::Start));
-    return S_OK;
+	return S_OK;
 }
 
 
@@ -1332,7 +1059,7 @@ HRESULT CLiteStep::_StartServices()
 HRESULT CLiteStep::_StopServices()
 {
     for_each(m_Services.begin(), m_Services.end(), mem_fun(&IService::Stop));
-    return S_OK;
+	return S_OK;
 }
 
 
@@ -1343,7 +1070,7 @@ void CLiteStep::_CleanupServices()
 {
     std::for_each(m_Services.begin(), m_Services.end(),
         std::mem_fun(&IService::Release));
-
+    
     m_Services.clear();
 }
 
@@ -1353,18 +1080,18 @@ void CLiteStep::_CleanupServices()
 //
 HRESULT CLiteStep::_InitManagers()
 {
-    HRESULT hr = S_OK;
+	HRESULT hr = S_OK;
 
-    m_pMessageManager = new MessageManager();
+	m_pMessageManager = new MessageManager();
+	m_pModuleManager = new ModuleManager();
 
-    m_pModuleManager = new ModuleManager();
+	// Note:
+	// - The DataStore manager is dynamically initialized/started.
+	// - The Bang and Settings managers are located in LSAPI, and
+	//   are instantiated via LSAPIInit.
+	// - The Hook mamanger is dynamically initialized/started.
 
-    // Note:
-    // - The DataStore manager is dynamically initialized/started.
-    // - The Bang and Settings managers are located in LSAPI, and
-    //   are instantiated via LSAPIInit.
-
-    return hr;
+	return hr;
 }
 
 
@@ -1373,16 +1100,17 @@ HRESULT CLiteStep::_InitManagers()
 //
 HRESULT CLiteStep::_StartManagers()
 {
-    HRESULT hr = S_OK;
+	HRESULT hr = S_OK;
 
-    // Load modules
-    m_pModuleManager->Start(this);
+	// Load modules
+	m_pModuleManager->Start(this);
 
-    // Note:
-    // - MessageManager has/needs no Start method.
-    // - The DataStore manager is dynamically initialized/started.
+	// Note:
+	// - MessageManager has/needs no Start method.
+	// - The DataStore manager is dynamically initialized/started.
+	// - The Hook mamanger is dynamically initialized/started.
 
-    return hr;
+	return hr;
 }
 
 
@@ -1391,18 +1119,25 @@ HRESULT CLiteStep::_StartManagers()
 //
 HRESULT CLiteStep::_StopManagers()
 {
-    HRESULT hr = S_OK;
+	HRESULT hr = S_OK;
 
-    m_pModuleManager->Stop();
+	m_pModuleManager->Stop();
 
-    // Clean up as modules might not have
-    m_pMessageManager->ClearMessages();
+	// Clean up as modules might not have
 
-    // Note:
-    // - The DataStore manager is persistent.
-    // - The Message manager can not be "stopped", just cleared.
+	m_pMessageManager->ClearMessages();
 
-    return hr;
+	if (m_bHookManagerStarted)
+	{
+		StopHookManager();
+		m_bHookManagerStarted = false;
+	}
+
+	// Note:
+	// - The DataStore manager is persistent.
+	// - The Message manager can not be "stopped", just cleared.
+
+	return hr;
 }
 
 
@@ -1411,23 +1146,27 @@ HRESULT CLiteStep::_StopManagers()
 //
 void CLiteStep::_CleanupManagers()
 {
-    if (m_pModuleManager)
-    {
-        delete m_pModuleManager;
-        m_pModuleManager = NULL;
-    }
+	if (m_pModuleManager)
+	{
+		delete m_pModuleManager;
+		m_pModuleManager = NULL;
+	}
 
-    if (m_pMessageManager)
-    {
-        delete m_pMessageManager;
-        m_pMessageManager = NULL;
-    }
+	if (m_pMessageManager)
+	{
+		delete m_pMessageManager;
+		m_pMessageManager = NULL;
+	}
 
-    if (m_pDataStoreManager)
-    {
-        delete m_pDataStoreManager;
-        m_pDataStoreManager = NULL;
-    }
+	if (m_pDataStoreManager)
+	{
+		delete m_pDataStoreManager;
+		m_pDataStoreManager = NULL;
+	}
+
+	// Note:
+	// - The Hook manager is dynamically created/deleted.
+
 }
 
 
@@ -1436,110 +1175,223 @@ void CLiteStep::_CleanupManagers()
 //
 void CLiteStep::_Recycle()
 {
-    Block block(m_BlockRecycle);
+	Block block(m_BlockRecycle);
 
-    /* Do not allow recursive recycles.  This may happen if some
-     * one is heavy fingered on their recycle hotkey, and multiple
-     * LM_RECYCLE messages are posted to the queue. */
-    if (block.IsBlocked())
-    {
-        return;
-    }
-    _StopManagers();
+	/* Do not allow recursive recycles.  This may happen if some
+	 * one is heavy fingered on their recycle hotkey, and multiple
+	 * LM_RECYCLE messages are posted to the queue. */
+	if(block.IsBlocked())
+	{
+		return;
+	}
 
-    if (GetAsyncKeyState(VK_SHIFT) & 0x8000)
-    {
-        RESOURCE_MSGBOX(m_hInstance, IDS_LITESTEP_ERROR6,
-            L"Recycle has been paused, click OK to continue.",
-            L"LiteStep");
-    }
+	_StopManagers();
 
-    // Re-initialize the bang and settings manager in LSAPI
-    LSAPIReloadBangs();
-    LSAPIReloadSettings();
+	if (GetAsyncKeyState(VK_SHIFT) & 0x8000)
+	{
+		RESOURCE_MSGBOX(m_hInstance, IDS_LITESTEP_ERROR6,
+		                "Recycle has been paused, click OK to continue.", "LiteStep");
+	}
 
-    // Call service's Recycle function
-    for_each(m_Services.begin(), m_Services.end(), mem_fun(&IService::Recycle));
+	// Re-initialize the bang and settings manager in LSAPI
+	LSAPIReloadBangs();
+	LSAPIReloadSettings();
 
-    _StartManagers();
+	/* Read in our locally affected settings */
+	m_bAutoHideModules = GetRCBool("LSAutoHideModules", TRUE) ? true : false;
+
+	_StartManagers();
 }
 
 
 //
 // _EnumRevIDs
 //
-HRESULT CLiteStep::_EnumRevIDs(LSENUMREVIDSPROCW pfnCallback, LPARAM lParam) const
+HRESULT CLiteStep::_EnumRevIDs(LSENUMREVIDSPROC pfnCallback, LPARAM lParam) const
 {
     HRESULT hr = E_FAIL;
 
-    MessageManager::windowSetT setWindowsW, setWindowsA;
-
-    m_pMessageManager->GetWindowsForMessage(LM_GETREVIDA, setWindowsA);
-    m_pMessageManager->GetWindowsForMessage(LM_GETREVIDW, setWindowsW);
-
-    if (!setWindowsA.empty() || !setWindowsW.empty())
+    MessageManager::windowSetT setWindows;
+    
+    if (m_pMessageManager->GetWindowsForMessage(LM_GETREVID, setWindows))
     {
         hr = S_OK;
-
-        for (MessageManager::windowSetT::iterator iter = setWindowsW.begin();
-            iter != setWindowsW.end(); ++iter)
+        
+#if !defined(LS_NO_EXCEPTION)
+        try
         {
-            // Using MAX_LINE_LENGTH to be on the safe side. Modules
-            // should assume a length of 64 or so.
-            wchar_t wzBuffer[MAX_LINE_LENGTH] = { 0 };
-
-            if (SendMessage(*iter, LM_GETREVIDW, 0, (LPARAM)&wzBuffer) > 0)
+#endif /* LS_NO_EXCEPTION */
+            for (MessageManager::windowSetT::iterator iter = setWindows.begin();
+                 iter != setWindows.end(); ++iter)
             {
-                if (!pfnCallback(wzBuffer, lParam))
+                // Using MAX_LINE_LENGTH to be on the safe side. Modules
+                // should assume a length of 64 or so.
+                char szBuffer[MAX_LINE_LENGTH] = { 0 };
+                
+                if (SendMessage(*iter, LM_GETREVID, 0, (LPARAM)&szBuffer) > 0)
                 {
-                    hr = S_FALSE;
-                    break;
+                    if (!pfnCallback(szBuffer, lParam))
+                    {
+                        hr = S_FALSE;
+                        break;
+                    }
                 }
             }
+#if !defined(LS_NO_EXCEPTION)
         }
-
-        for (MessageManager::windowSetT::iterator iter = setWindowsA.begin();
-            iter != setWindowsA.end(); ++iter)
+        catch (...)
         {
-            // Using MAX_LINE_LENGTH to be on the safe side. Modules
-            // should assume a length of 64 or so.
-            char szBuffer[MAX_LINE_LENGTH] = { 0 };
-
-            if (SendMessage(*iter, LM_GETREVIDA, 0, (LPARAM)&szBuffer) > 0)
-            {
-                if (!pfnCallback(MBSTOWCS(szBuffer), lParam))
-                {
-                    hr = S_FALSE;
-                    break;
-                }
-            }
+            hr = E_UNEXPECTED;
         }
+#endif /* LS_NO_EXCEPTION */
     }
 
     return hr;
 }
 
-
 //
-// _SetShellWindow
+// _IsWindowFullScreen
 //
-BOOL CLiteStep::_SetShellWindow(HWND hWnd) {
-    typedef BOOL (WINAPI* SETSHELLWINDOWPROC)(HWND);
-
-    SETSHELLWINDOWPROC fnSetShellWindow =
-        (SETSHELLWINDOWPROC)GetProcAddress(
-        GetModuleHandle(_T("USER32.DLL")), "SetShellWindow");
-
-    BOOL bRet = FALSE;
-
-    if (fnSetShellWindow)
+bool CLiteStep::_IsWindowFullScreen(HWND hWnd)
+{
+    if (!IsWindow(hWnd) || !IsWindowVisible(hWnd))
     {
-        bRet = fnSetShellWindow(hWnd);
-    }
-    else
-    {
-        TRACE("SetShellWindow() not found");
+        return false;
     }
 
-    return bRet;
+    RECT rScreen = {0};
+    rScreen.right = GetSystemMetrics(SM_CXSCREEN);
+    rScreen.bottom = GetSystemMetrics(SM_CYSCREEN);
+
+    RECT rWnd;
+    VERIFY(GetClientRect(hWnd, &rWnd));
+    
+    LONG width, height;
+    width = rWnd.right - rWnd.left;
+    height = rWnd.bottom - rWnd.top;
+    
+    POINT pt = {rWnd.left, rWnd.top};
+    VERIFY(ClientToScreen(hWnd, &pt));
+    
+    rWnd.left = pt.x;
+    rWnd.top = pt.y;
+    rWnd.right = pt.x + width;
+    rWnd.bottom = pt.y + height;
+    
+    // If the client area is the size of the screen, then consider it to be
+    // a full screen window.
+    if (EqualRect(&rScreen, &rWnd))
+    {
+        return true;
+    }
+
+    DWORD dwStyle = GetWindowLong(hWnd, GWL_STYLE);
+    // Check Window Rect if WS_CAPTION or WS_THICKFRAME is part of the style.
+    // As long as at least one of them is not set, then we can check if the
+    // window is full screen or not: http://support.microsoft.com/kb/q179363/
+    if (WS_CAPTION != (WS_CAPTION & dwStyle) ||
+        WS_THICKFRAME != (WS_THICKFRAME & dwStyle))
+    {
+        // If the window is maximized, then just get its window rect.
+        if(WS_MAXIMIZE == (WS_MAXIMIZE & dwStyle))
+        {
+            VERIFY(GetWindowRect(hWnd, &rWnd));
+        }
+        else
+        {
+            // A window might still not be in its full screen state when we
+            // get here (wp.showCmd is sometimes equal to SW_SHOWMINIMIZED),
+            // so calling GetWindowRect will not always give us the expected
+            // dimensions. Using GetWindowPlacement and its rcNormalPosition
+            // RECT will however. It gets us the size the window will have
+            // after it has finished resizing.
+            WINDOWPLACEMENT wp = {0};
+            wp.length = sizeof(WINDOWPLACEMENT);
+            VERIFY(GetWindowPlacement(hWnd, &wp));
+
+            VERIFY(CopyRect(&rWnd, &wp.rcNormalPosition));
+
+            // If the window does not have WS_EX_TOOLWINDOW set then the
+            // coordinates are workspace coordinates and we must fix this.
+            if (0 == (WS_EX_TOOLWINDOW & GetWindowLongPtr(hWnd, GWL_EXSTYLE)))
+            {
+                RECT rWA;
+                VERIFY(SystemParametersInfo(SPI_GETWORKAREA, 0, &rWA, 0));
+                VERIFY(OffsetRect(&rWnd, rWA.left, rWA.top));
+            }
+        }
+
+        if (EqualRect(&rScreen, &rWnd))
+        {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+//
+// _EnumThreadFSWnd
+//
+BOOL CALLBACK CLiteStep::_EnumThreadFSWnd(HWND hWnd, LPARAM lParam)
+{
+    if (_IsWindowFullScreen(hWnd))
+    {
+        *(BOOL*)lParam = TRUE;
+        return FALSE;
+    }
+
+    return TRUE;
+}
+
+//
+// _IsFullScreenActive
+//
+bool CLiteStep::_IsFullScreenActive(HWND hWnd)
+{
+    if(!IsWindow(hWnd))
+    {
+        return false;
+    }
+
+    BOOL bIsFullScreen = FALSE;
+
+    DWORD dwProcessID;
+    DWORD dwThreadID = GetWindowThreadProcessId(hWnd, &dwProcessID);
+
+    DWORD dwLSProcessID;
+    GetWindowThreadProcessId(GetLitestepWnd(), &dwLSProcessID);
+
+    if(dwProcessID == dwLSProcessID)
+    {
+        return false;
+    }
+
+    EnumThreadWindows(dwThreadID, _EnumThreadFSWnd, (LPARAM)&bIsFullScreen);
+    return FALSE != bIsFullScreen;
+}
+
+//
+// _HandleFullScreenApp
+//
+void CLiteStep::_HandleFullScreenApp(bool isFullscreen)
+{
+    m_bAppIsFullScreen = isFullscreen;
+
+    if (m_pTrayService)
+    {
+        m_pTrayService->NotifyRudeApp(isFullscreen);
+    }
+
+    if (m_bAutoHideModules)
+    {
+        if (isFullscreen)
+        {
+            ParseBangCommand(m_hMainWindow, "!HideModules", NULL);
+        }
+        else
+        {
+            ParseBangCommand(m_hMainWindow, "!ShowModules", NULL);
+        }
+    }
 }

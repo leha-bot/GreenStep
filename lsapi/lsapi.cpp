@@ -1,33 +1,40 @@
-//=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
-//
-// This is a part of the Litestep Shell source code.
-//
-// Copyright (C) 1997-2015  LiteStep Development Team
-//
-// This program is free software; you can redistribute it and/or
-// modify it under the terms of the GNU General Public License
-// as published by the Free Software Foundation; either version 2
-// of the License, or (at your option) any later version.
-//
-// This program is distributed in the hope that it will be useful,
-// but WITHOUT ANY WARRANTY; without even the implied warranty of
-// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-// GNU General Public License for more details.
-//
-// You should have received a copy of the GNU General Public License
-// along with this program; if not, write to the Free Software
-// Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
-//
-//=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
+/*
+
+This is a part of the LiteStep Shell Source code.
+
+Copyright (C) 1997-2006 The LiteStep Development Team
+
+This program is free software; you can redistribute it and/or
+modify it under the terms of the GNU General Public License
+as published by the Free Software Foundation; either version 2
+of the License, or (at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program; if not, write to the Free Software
+Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
+
+*/ 
+/****************************************************************************
+****************************************************************************/
 #include "lsapi.h"
 #include "lsapiinit.h"
 #include "BangCommand.h"
+#include "../utility/shellhlp.h"
 #include "../utility/core.hpp"
 
-static int _Tokenize(LPCSTR pszString, LPSTR* lpszBuffers, DWORD dwNumBuffers,
-                     LPSTR pszExtraParameters, BOOL bUseBrackets);
+static int _Tokenize(LPCSTR pszString, LPSTR* lpszBuffers, DWORD dwNumBuffers, LPSTR pszExtraParameters, BOOL bUseBrackets);
 
-BOOL LSAPIInitialize(LPCWSTR pszLitestepPath, LPCWSTR pszRcPath)
+extern const char rcsRevision[];
+const char rcsRevision[] = "$Revision: 1.20.2.5 $"; // Our Version
+const char rcsId[] = "$Id: lsapi.cpp,v 1.20.2.5 2008/08/16 05:34:22 jugg Exp $"; // The Full RCS ID.
+
+
+BOOL LSAPIInitialize(LPCSTR pszLitestepPath, LPCSTR pszRcPath)
 {
     try
     {
@@ -37,10 +44,9 @@ BOOL LSAPIInitialize(LPCWSTR pszLitestepPath, LPCWSTR pszRcPath)
     {
         lse.Type();
     }
-
-    return g_LSAPIManager.IsInitialized() ? TRUE : FALSE;
+    
+    return g_LSAPIManager.IsInitialized() ? TRUE:FALSE;
 }
-
 
 void LSAPIReloadBangs(VOID)
 {
@@ -54,7 +60,6 @@ void LSAPIReloadBangs(VOID)
     }
 }
 
-
 void LSAPIReloadSettings(VOID)
 {
     try
@@ -67,110 +72,65 @@ void LSAPIReloadSettings(VOID)
     }
 }
 
-
 void LSAPISetLitestepWindow(HWND hLitestepWnd)
 {
     g_LSAPIManager.SetLitestepWindow(hLitestepWnd);
 }
 
 
-void LSAPISetCOMFactory(IClassFactory *pFactory)
-{
-    g_LSAPIManager.SetCOMFactory(pFactory);
-}
-
-
-template<typename BangType>
-static BOOL AddBangCommandWorker(LPCWSTR pwzCommand, BangType pfnBangCommand)
+template<typename T>
+BOOL AddBangCommandWorker(LPCSTR pszCommand, T pfnBangCommand)
 {
     BOOL bReturn = FALSE;
-
-    if (pwzCommand != nullptr && pfnBangCommand != nullptr)
+    
+    if (IsValidStringPtr(pszCommand) && IsValidCodePtr((FARPROC)pfnBangCommand))
     {
         DWORD dwCurrentThreadID = GetCurrentThreadId();
-
-        Bang* pBang = new (std::nothrow) Bang(dwCurrentThreadID, pfnBangCommand, pwzCommand);
-
-        if (pBang != nullptr)
+        
+        Bang* pBang = new Bang(dwCurrentThreadID, pfnBangCommand, pszCommand);
+        
+        if (IsValidReadPtr(pBang))
         {
             //bBang->AddRef();
-            g_LSAPIManager.GetBangManager()->AddBangCommand(pBang);
+            g_LSAPIManager.GetBangManager()->AddBangCommand(pszCommand, pBang);
             pBang->Release();
             bReturn = TRUE;
         }
     }
-
+    
     return bReturn;
 }
 
 
 //
-// AddBangCommandW
+// AddBangCommand(LPCSTR pszCommand, BangCommand pfnBangCommand)
 //
-BOOL AddBangCommandW(LPCWSTR pwzCommand, BangCommandW pfnBangCommand)
+BOOL AddBangCommand(LPCSTR pszCommand, BangCommand pfnBangCommand)
 {
-    return AddBangCommandWorker(pwzCommand, pfnBangCommand);
+    return AddBangCommandWorker(pszCommand, pfnBangCommand);
 }
 
 
 //
-// AddBangCommandA
+// AddBangCommandEx(LPCSTR pszCommand, BangCommand pfnBangCommand)
 //
-BOOL AddBangCommandA(LPCSTR pszCommand, BangCommandA pfnBangCommand)
+BOOL AddBangCommandEx(LPCSTR pszCommand, BangCommandEx pfnBangCommand)
 {
-    return AddBangCommandWorker(std::unique_ptr<wchar_t>(WCSFromMBS(pszCommand)).get(),
-        pfnBangCommand);
+    return AddBangCommandWorker(pszCommand, pfnBangCommand);
 }
 
 
 //
-// AddBangCommandExW
+// RemoveBangCommand(LPCSTR pszCommand)
 //
-BOOL AddBangCommandExW(LPCWSTR pwzCommand, BangCommandExW pfnBangCommand)
-{
-    return AddBangCommandWorker(pwzCommand, pfnBangCommand);
-}
-
-
-//
-// AddBangCommandExA
-//
-BOOL AddBangCommandExA(LPCSTR pszCommand, BangCommandExA pfnBangCommand)
-{
-    return AddBangCommandWorker(std::unique_ptr<wchar_t>(WCSFromMBS(pszCommand)).get(),
-        pfnBangCommand);
-}
-
-
-//
-// RemoveBangCommandW(LPCWSTR pwzCommand)
-//
-BOOL RemoveBangCommandW(LPCWSTR pwzCommand)
+BOOL RemoveBangCommand(LPCSTR pszCommand)
 {
     BOOL bResult = FALSE;
-
-    if (pwzCommand != nullptr)
+    
+    if (IsValidStringPtr(pszCommand))
     {
         bResult = \
-            g_LSAPIManager.GetBangManager()->RemoveBangCommand(pwzCommand);
-    }
-
-    return bResult;
-}
-
-
-//
-// RemoveBangCommandA(LPCSTR pszCommand)
-//
-BOOL RemoveBangCommandA(LPCSTR pszCommand)
-{
-    BOOL bResult = FALSE;
-
-    if (pszCommand != nullptr)
-    {
-        bResult = g_LSAPIManager.GetBangManager()->RemoveBangCommand(
-            std::unique_ptr<wchar_t>(WCSFromMBS(pszCommand)).get()
-        );
+            g_LSAPIManager.GetBangManager()->RemoveBangCommand(pszCommand);
     }
 
     return bResult;
@@ -179,238 +139,164 @@ BOOL RemoveBangCommandA(LPCSTR pszCommand)
 
 //
 // InternalExecuteBangCommand
-//   (Just like ParseBangCommand but without the variable expansion)
+// Just like ParseBangCommand but without the variable expansion
 //
-BOOL InternalExecuteBangCommand(HWND hCaller, LPCWSTR pwzCommand, LPCWSTR pwzArgs)
+BOOL InternalExecuteBangCommand(HWND hCaller, LPCSTR pszCommand, LPCSTR pszArgs)
 {
     return g_LSAPIManager.GetBangManager()->
-        ExecuteBangCommand(pwzCommand, hCaller, pwzArgs);
+        ExecuteBangCommand(pszCommand, hCaller, pszArgs);
 }
 
 
 //
-// ParseBangCommandW
+// ParseBangCommand(HWND hCaller, LPCSTR pszCommand, LPCSTR pszArgs)
 //
-BOOL ParseBangCommandW(HWND hCaller, LPCWSTR pwzCommand, LPCWSTR pwzArgs)
+BOOL ParseBangCommand(HWND hCaller, LPCSTR pszCommand, LPCSTR pszArgs)
 {
-    TRACE("ParseBangCommand(%p, \"%ls\", \"%ls\");",
-        hCaller, pwzCommand, pwzArgs);
+    char szExpandedArgs[MAX_LINE_LENGTH] = { 0 };
+	BOOL bReturn = FALSE;
 
-    wchar_t wzExpandedArgs[MAX_LINE_LENGTH] = { 0 };
-    BOOL bReturn = FALSE;
+	if (IsValidStringPtr(pszCommand))
+	{
+		if (IsValidStringPtr(pszArgs))
+		{
+			VarExpansionEx(szExpandedArgs, pszArgs, MAX_LINE_LENGTH);
+		}
 
-    if (pwzCommand != nullptr)
-    {
-        if (pwzArgs != nullptr)
-        {
-            VarExpansionExW(wzExpandedArgs, pwzArgs, MAX_LINE_LENGTH);
-        }
+		bReturn = \
+            InternalExecuteBangCommand(hCaller, pszCommand, szExpandedArgs);
+	}
 
-        bReturn = \
-            InternalExecuteBangCommand(hCaller, pwzCommand, wzExpandedArgs);
-    }
-
-    return bReturn;
+	return bReturn;
 }
 
 
 //
-// ParseBangCommandA
+// CommandParse(LPCSTR pszCommand, LPSTR pszOutCommand, LPSTR pszOutArgs, size_t cchOutCommand, size_t cchOutArgs)
 //
-BOOL ParseBangCommandA(HWND hCaller, LPCSTR pszCommand, LPCSTR pszArgs)
+void CommandParse(LPCSTR pszCommand, LPSTR pszOutCommand, LPSTR pszOutArgs, size_t cchOutCommand, size_t cchOutArgs)
 {
-    return ParseBangCommandW(hCaller,
-        std::unique_ptr<wchar_t>(WCSFromMBS(pszCommand)).get(),
-        std::unique_ptr<wchar_t>(WCSFromMBS(pszArgs)).get());
+	char szCommand[MAX_LINE_LENGTH];
+	char szTempCommand[MAX_LINE_LENGTH];
+	LPCSTR pszTempArgs = NULL;
+
+	if (IsValidStringPtr(pszCommand))
+	{
+		if (IsValidStringPtr(pszOutCommand, cchOutCommand))
+		{
+			VarExpansionEx(szCommand, pszCommand, MAX_LINE_LENGTH);
+
+			GetToken(szCommand, szTempCommand, &pszTempArgs, TRUE);
+
+			StringCchCopy(pszOutCommand, cchOutCommand, szTempCommand);
+		}
+		if (IsValidStringPtr(pszOutArgs, cchOutArgs))
+		{
+			StringCchCopy(pszOutArgs, cchOutArgs, pszTempArgs);
+		}
+	}
 }
 
 
 //
-// CommandParseW
+// LSExecuteEx(HWND hOwner, LPCSTR pszOperation, LPCSTR pszCommand, LPCSTR pszArgs, LPCSTR pszDirectory, int nShowCmd)
 //
-void CommandParseW(LPCWSTR pwzCommand, LPWSTR pwzOutCommand, LPWSTR pwzOutArgs, size_t cchOutCommand, size_t cchOutArgs)
+HINSTANCE LSExecuteEx(HWND hOwner, LPCSTR pszOperation, LPCSTR pszCommand, LPCSTR pszArgs, LPCSTR pszDirectory, int nShowCmd)
 {
-    wchar_t wzCommand[MAX_LINE_LENGTH];
-    wchar_t wzTempCommand[MAX_LINE_LENGTH];
-    LPCWSTR pwzTempArgs = nullptr;
+	HINSTANCE hReturn = HINSTANCE(32);
 
-    if (pwzCommand != nullptr)
-    {
-        if (pwzOutCommand != nullptr && cchOutCommand > 0)
-        {
-            VarExpansionExW(wzCommand, pwzCommand, MAX_LINE_LENGTH);
+	if (IsValidStringPtr(pszCommand))
+	{
+		if (pszCommand[0] == '!')
+		{
+			hReturn = ParseBangCommand(hOwner, pszCommand, pszArgs) ? HINSTANCE(33) : HINSTANCE(32);
+		}
+		else
+		{
+			DWORD dwType = GetFileAttributes(pszCommand);
+			if ((dwType & FILE_ATTRIBUTE_DIRECTORY) && (dwType != 0xFFFFFFFF))
+			{
+				hReturn = ShellExecute(hOwner, pszOperation, pszCommand, pszArgs, NULL, nShowCmd ? nShowCmd : SW_SHOWNORMAL);
+			}
+			else
+			{
+                SHELLEXECUTEINFO seiCommand = { 0 };
+				seiCommand.cbSize = sizeof(SHELLEXECUTEINFO);
+				seiCommand.hwnd = hOwner;
+				seiCommand.lpVerb = pszOperation;
+				seiCommand.lpFile = pszCommand;
+				seiCommand.lpParameters = pszArgs;
+				seiCommand.lpDirectory = pszDirectory;
+				seiCommand.nShow = nShowCmd;
+				seiCommand.fMask = SEE_MASK_DOENVSUBST | SEE_MASK_FLAG_NO_UI;
 
-            GetTokenW(wzCommand, wzTempCommand, &pwzTempArgs, TRUE);
+				ShellExecuteEx(&seiCommand);
 
-            StringCchCopyW(pwzOutCommand, cchOutCommand, wzTempCommand);
-        }
+				hReturn = seiCommand.hInstApp;
+			}
+		}
+	}
 
-        if (pwzOutArgs != nullptr && cchOutArgs > 0)
-        {
-            StringCchCopyW(pwzOutArgs, cchOutArgs, pwzTempArgs);
-        }
-    }
+	return hReturn;
 }
 
 
 //
-// CommandParseA
+// LSExecute(HWND hOwner, LPCSTR pszCommand, int nShowCmd)
 //
-void CommandParseA(LPCSTR pszCommand, LPSTR pszOutCommand, LPSTR pszOutArgs, size_t cchOutCommand, size_t cchOutArgs)
+HINSTANCE LSExecute(HWND hOwner, LPCSTR pszCommand, int nShowCmd)
 {
-    char szCommand[MAX_LINE_LENGTH];
-    char szTempCommand[MAX_LINE_LENGTH];
-    LPCSTR pszTempArgs = nullptr;
+	char szCommand[MAX_LINE_LENGTH];
+	char szExpandedCommand[MAX_LINE_LENGTH];
+	LPCSTR pszArgs;
+	HINSTANCE hResult = HINSTANCE(32);
 
-    if (pszCommand != nullptr)
-    {
-        if (pszOutCommand != nullptr && cchOutCommand > 0)
-        {
-            VarExpansionExA(szCommand, pszCommand, MAX_LINE_LENGTH);
+	if (IsValidStringPtr(pszCommand))
+	{
+		VarExpansionEx(szExpandedCommand, pszCommand, MAX_LINE_LENGTH);
 
-            GetTokenA(szCommand, szTempCommand, &pszTempArgs, TRUE);
+		if (GetToken(szExpandedCommand, szCommand, &pszArgs, TRUE))
+		{
+			if (pszArgs > (szExpandedCommand + strlen(szExpandedCommand)))
+			{
+				pszArgs = NULL;
+			}
 
-            StringCchCopyA(pszOutCommand, cchOutCommand, szTempCommand);
-        }
+			if (szCommand[0] == '!')
+			{
+				hResult = LSExecuteEx(hOwner, NULL, szCommand, pszArgs, NULL, 0);
+			}
+			else
+			{
+				char szDir[_MAX_DIR];
+				char szFullDir[_MAX_DIR + _MAX_DRIVE];
 
-        if (pszOutArgs != nullptr && cchOutArgs > 0)
-        {
-            StringCchCopyA(pszOutArgs, cchOutArgs, pszTempArgs);
-        }
-    }
+				_splitpath(szCommand, szFullDir, szDir, NULL, NULL);
+				StringCchCat(szFullDir, _MAX_DIR + _MAX_DRIVE, szDir);
+
+				hResult = LSExecuteEx(hOwner, NULL, szCommand, pszArgs,
+                    szFullDir, nShowCmd ? nShowCmd : SW_SHOWNORMAL);
+			}
+		}
+	}
+
+	return hResult;
 }
 
-
 //
-// LSExecuteExW
-//
-HINSTANCE LSExecuteExW(HWND hOwner, LPCWSTR pwzOperation, LPCWSTR pwzCommand, LPCWSTR pwzArgs, LPCWSTR pwzDirectory, int nShowCmd)
-{
-    HINSTANCE hReturn = HINSTANCE(32);
-
-    if (pwzCommand != nullptr)
-    {
-        if (pwzCommand[0] == L'!')
-        {
-            hReturn = ParseBangCommandW(hOwner, pwzCommand, pwzArgs) ?
-                HINSTANCE(33) : HINSTANCE(32);
-        }
-        else
-        {
-            TRACE("LSExecuteEx(%p, \"%ls\", \"%ls\", \"%ls\", \"%ls\", %d);",
-                hOwner, pwzOperation, pwzCommand, pwzArgs, pwzDirectory,
-                nShowCmd);
-
-            if (PathIsDirectoryW(pwzCommand))
-            {
-                hReturn = LSShellExecute(hOwner, pwzOperation, pwzCommand,
-                    pwzArgs, NULL, nShowCmd ? nShowCmd : SW_SHOWNORMAL);
-            }
-            else
-            {
-                SHELLEXECUTEINFOW seiCommand = { 0 };
-                seiCommand.cbSize = sizeof(SHELLEXECUTEINFOW);
-                seiCommand.hwnd = hOwner;
-                seiCommand.lpVerb = pwzOperation;
-                seiCommand.lpFile = pwzCommand;
-                seiCommand.lpParameters = pwzArgs;
-                seiCommand.lpDirectory = pwzDirectory;
-                seiCommand.nShow = nShowCmd;
-                seiCommand.fMask = SEE_MASK_DOENVSUBST | SEE_MASK_FLAG_NO_UI;
-
-                LSShellExecuteEx(&seiCommand);
-
-                hReturn = seiCommand.hInstApp;
-            }
-        }
-    }
-
-    return hReturn;
-}
-
-
-//
-// LSExecuteExA
-//
-HINSTANCE LSExecuteExA(HWND hOwner, LPCSTR pszOperation, LPCSTR pszCommand, LPCSTR pszArgs, LPCSTR pszDirectory, int nShowCmd)
-{
-    return LSExecuteExW(
-        hOwner,
-        std::unique_ptr<wchar_t>(WCSFromMBS(pszOperation)).get(),
-        std::unique_ptr<wchar_t>(WCSFromMBS(pszCommand)).get(),
-        std::unique_ptr<wchar_t>(WCSFromMBS(pszArgs)).get(),
-        std::unique_ptr<wchar_t>(WCSFromMBS(pszDirectory)).get(),
-        nShowCmd);
-}
-
-
-//
-// LSExecuteW
-//
-HINSTANCE LSExecuteW(HWND hOwner, LPCWSTR pwzCommand, int nShowCmd)
-{
-    wchar_t wzCommand[MAX_LINE_LENGTH];
-    wchar_t wzExpandedCommand[MAX_LINE_LENGTH];
-    LPCWSTR pwzArgs;
-    HINSTANCE hResult = HINSTANCE(32);
-
-    if (pwzCommand != nullptr)
-    {
-        VarExpansionExW(wzExpandedCommand, pwzCommand, MAX_LINE_LENGTH);
-
-        if (GetTokenW(wzExpandedCommand, wzCommand, &pwzArgs, TRUE))
-        {
-            if (pwzArgs > (wzExpandedCommand + wcslen(wzExpandedCommand)))
-            {
-                pwzArgs = nullptr;
-            }
-
-            if (wzCommand[0] == L'!')
-            {
-                hResult = LSExecuteExW(hOwner, nullptr,
-                    wzCommand, pwzArgs, nullptr, 0);
-            }
-            else
-            {
-                wchar_t wzDir[_MAX_DIR];
-                wchar_t wzFullDir[_MAX_DIR + _MAX_DRIVE];
-
-                _wsplitpath_s(wzCommand, wzFullDir, _countof(wzFullDir), wzDir, _countof(wzDir), nullptr, 0, nullptr, 0);
-                StringCchCatW(wzFullDir, _MAX_DIR + _MAX_DRIVE, wzDir);
-
-                hResult = LSExecuteExW(hOwner, NULL, wzCommand, pwzArgs,
-                    wzFullDir, nShowCmd ? nShowCmd : SW_SHOWNORMAL);
-            }
-        }
-    }
-
-    return hResult;
-}
-
-
-//
-// LSExecuteA
-//
-HINSTANCE LSExecuteA(HWND hOwner, LPCSTR pszCommand, int nShowCmd)
-{
-    return LSExecuteW(hOwner, std::unique_ptr<wchar_t>(WCSFromMBS(pszCommand)).get(), nShowCmd);
-}
-
-
-//
-// SetDesktopArea
+// SetDesktopArea(int left, int top, int right, int bottom)
 //
 void SetDesktopArea(int left, int top, int right, int bottom)
 {
-    RECT r = { left, top, right, bottom };
+	RECT r = { left, top, right, bottom };
 
-    SystemParametersInfo(SPI_SETWORKAREA, 0, (PVOID)&r, SPIF_SENDCHANGE);
-    SystemParametersInfo(SPI_GETWORKAREA, 0, (PVOID)&r, SPIF_SENDCHANGE);
+	SystemParametersInfo(SPI_SETWORKAREA, 0, (PVOID) & r, SPIF_SENDCHANGE);
+	SystemParametersInfo(SPI_GETWORKAREA, 0, (PVOID) & r, SPIF_SENDCHANGE);
 }
 
 
 //
-// GetLitestepWnd
+//	GetLitestepWnd()
 //
 HWND GetLitestepWnd()
 {
@@ -419,544 +305,250 @@ HWND GetLitestepWnd()
 
 
 //
-// GetResStrW
+// void GetResStr(HINSTANCE hInstance, UINT uIDText, LPSTR pszText, size_t cchText, LPCSTR pszDefText)
 //
-void GetResStrW(HINSTANCE hInstance, UINT uIDText, LPWSTR pszText, size_t cchText, LPCWSTR pszDefText)
+void GetResStr(HINSTANCE hInstance, UINT uIDText, LPSTR pszText, size_t cchText, LPCSTR pszDefText)
 {
-    if (pszText != NULL && cchText > 0)
-    {
-        if (LoadString(hInstance, uIDText, pszText, (int)cchText) == 0)
-        {
-            StringCchCopy(pszText, cchText, pszDefText);
-        }
-    }
+	if (IsValidStringPtr(pszText, cchText))
+	{
+		if (LoadString(hInstance, uIDText, pszText, cchText) == 0)
+		{
+			StringCchCopy(pszText, cchText, pszDefText);
+		}
+	}
 }
 
 
 //
-// GetResStrA
+// GetResStrEx(HINSTANCE hInstance, UINT uIDText, LPSTR pszText, size_t cchText, LPCSTR pszDefText, ...)
 //
-void GetResStrA(HINSTANCE hInstance, UINT uIDText, LPSTR pszText, size_t cchText, LPCSTR pszDefText)
+void GetResStrEx(HINSTANCE hInstance, UINT uIDText, LPSTR pszText, size_t cchText, LPCSTR pszDefText, ...)
 {
-    if (pszText != nullptr && cchText > 0)
-    {
-        if (LoadStringA(hInstance, uIDText, pszText, (int)cchText) == 0)
-        {
-            StringCchCopyA(pszText, cchText, pszDefText);
-        }
-    }
+	char szFormat[MAX_LINE_LENGTH];
+	va_list vargs;
+
+	if (IsValidStringPtr(pszText, cchText))
+	{
+		GetResStr(hInstance, uIDText, szFormat, MAX_LINE_LENGTH, pszDefText);
+
+		va_start(vargs, pszDefText);
+		StringCchVPrintf(pszText, cchText, szFormat, vargs);
+		va_end(vargs);
+	}
 }
 
 
 //
-// GetResStrExW
+// LSGetLitestepPath(LPSTR pszPath, size_t cchPath)
 //
-void GetResStrExW(HINSTANCE hInstance, UINT uIDText, LPWSTR pszText, size_t cchText, LPCWSTR pszDefText, ...)
-{
-    wchar_t szFormat[MAX_LINE_LENGTH];
-    va_list vargs;
-
-    if (pszText != NULL && cchText > 0)
-    {
-        GetResStrW(hInstance, uIDText, szFormat, MAX_LINE_LENGTH, pszDefText);
-
-        va_start(vargs, pszDefText);
-        StringCchVPrintf(pszText, cchText, szFormat, vargs);
-        va_end(vargs);
-    }
-}
-
-
-//
-// GetResStrExA
-//
-void GetResStrExA(HINSTANCE hInstance, UINT uIDText, LPSTR pszText, size_t cchText, LPCSTR pszDefText, ...)
-{
-    char szFormat[MAX_LINE_LENGTH];
-    va_list vargs;
-
-    if (pszText != NULL && cchText > 0)
-    {
-        GetResStrA(hInstance, uIDText, szFormat, MAX_LINE_LENGTH, pszDefText);
-
-        va_start(vargs, pszDefText);
-        StringCchVPrintfA(pszText, cchText, szFormat, vargs);
-        va_end(vargs);
-    }
-}
-
-
-//
-// LSGetLitestepPathW
-//
-BOOL WINAPI LSGetLitestepPathW(LPWSTR pwzPath, size_t cchPath)
+BOOL WINAPI LSGetLitestepPath(LPSTR pszPath, size_t cchPath)
 {
     BOOL bReturn = FALSE;
-
-    if (pwzPath != nullptr && cchPath > 0)
+    
+    if (IsValidStringPtr(pszPath, cchPath))
     {
         // Default to user defined variable
-        if (GetRCStringW(L"litestepdir", pwzPath, nullptr, (int)cchPath))
+        if (GetRCString("litestepdir", pszPath, NULL, cchPath))
         {
             bReturn = TRUE;
         }
     }
-
+    
     return bReturn;
 }
 
 
 //
-// LSGetLitestepPathA
+// LSGetImagePath(LPSTR pszPath, size_t cchPath)
 //
-BOOL WINAPI LSGetLitestepPathA(LPSTR pszPath, size_t cchPath)
+BOOL WINAPI LSGetImagePath(LPSTR pszPath, size_t cchPath)
 {
-    BOOL bReturn = FALSE;
+	BOOL bReturn = FALSE;
 
-    if (pszPath != nullptr && cchPath > 0)
-    {
-        // Default to user defined variable
-        if (GetRCStringA("litestepdir", pszPath, nullptr, (int)cchPath))
-        {
-            bReturn = TRUE;
-        }
-    }
+	if (IsValidStringPtr(pszPath, cchPath))
+	{
+		if (GetRCString("LSImageFolder", pszPath, NULL, cchPath))
+		{
+			bReturn = SUCCEEDED(PathAddBackslashEx(pszPath, cchPath));
+		}
+		else
+		{
+			if (LSGetLitestepPath(pszPath, cchPath))
+			{
+				StringCchCat(pszPath, cchPath, "images\\");
+				bReturn = TRUE;
+			}
+		}
+	}
 
-    return bReturn;
+	return bReturn;
 }
 
 
-//
-// LSGetImagePathW
-//
-BOOL WINAPI LSGetImagePathW(LPWSTR pwzPath, size_t cchPath)
-{
-    BOOL bReturn = FALSE;
-
-    if (pwzPath != nullptr && cchPath > 0)
-    {
-        if (GetRCStringW(L"LSImageFolder", pwzPath, nullptr, (int)cchPath))
-        {
-            bReturn = SUCCEEDED(PathAddBackslashEx(pwzPath, cchPath));
-        }
-        else
-        {
-            if (LSGetLitestepPathW(pwzPath, cchPath))
-            {
-                StringCchCat(pwzPath, cchPath, L"images\\");
-                bReturn = TRUE;
-            }
-        }
-    }
-
-    return bReturn;
-}
-
-
-//
-// LSGetImagePathA
-//
-BOOL WINAPI LSGetImagePathA(LPSTR pszPath, size_t cchPath)
-{
-    BOOL bReturn = FALSE;
-
-    if (pszPath != nullptr && cchPath > 0)
-    {
-        if (GetRCStringA("LSImageFolder", pszPath, nullptr, (int)cchPath))
-        {
-            bReturn = SUCCEEDED(PathAddBackslashExA(pszPath, cchPath));
-        }
-        else
-        {
-            if (LSGetLitestepPathA(pszPath, cchPath))
-            {
-                StringCchCatA(pszPath, cchPath, "images\\");
-                bReturn = TRUE;
-            }
-        }
-    }
-
-    return bReturn;
-}
-
-
-//
-// _Tokenize
-//   (local helper function)
-//
-static int _Tokenize(LPCWSTR pwzString, LPWSTR* lpwzBuffers, DWORD dwNumBuffers, LPWSTR pwzExtraParameters, BOOL bUseBrackets)
-{
-    wchar_t wzBuffer[MAX_LINE_LENGTH];
-    LPCWSTR pwzNextToken;
-    DWORD dwTokens = 0;
-
-    if (pwzString != nullptr)
-    {
-        pwzNextToken = pwzString;
-
-        if ((lpwzBuffers != nullptr) && (dwNumBuffers > 0))
-        {
-            for (; pwzNextToken && dwTokens < dwNumBuffers; ++dwTokens)
-            {
-                GetTokenW(pwzNextToken, wzBuffer, &pwzNextToken, bUseBrackets);
-
-                if (lpwzBuffers[dwTokens] != nullptr)
-                {
-                    StringCchCopyW(lpwzBuffers[dwTokens],
-                        wcslen(wzBuffer) + 1, wzBuffer);
-                }
-            }
-
-            for (DWORD dwClear = dwTokens; dwClear < dwNumBuffers; ++dwClear)
-            {
-                if (lpwzBuffers[dwClear] != nullptr)
-                {
-                    lpwzBuffers[dwClear][0] = L'\0';
-                }
-            }
-
-            if (pwzExtraParameters != nullptr)
-            {
-                if (pwzNextToken)
-                {
-                    StringCchCopyW(pwzExtraParameters,
-                        wcslen(pwzNextToken) + 1, pwzNextToken);
-                }
-                else
-                {
-                    pwzExtraParameters[0] = L'\0';
-                }
-            }
-        }
-        else
-        {
-            while (GetTokenW(pwzNextToken, nullptr, &pwzNextToken, bUseBrackets))
-            {
-                ++dwTokens;
-            }
-        }
-    }
-
-    return dwTokens;
-}
-
-
-//
-// _Tokenize
-//   (local helper function)
-//
 static int _Tokenize(LPCSTR pszString, LPSTR* lpszBuffers, DWORD dwNumBuffers, LPSTR pszExtraParameters, BOOL bUseBrackets)
 {
-    char szBuffer[MAX_LINE_LENGTH];
-    LPCSTR pszNextToken;
-    DWORD dwTokens = 0;
+	char szBuffer[MAX_LINE_LENGTH];
+	LPCSTR pszNextToken;
+	DWORD dwTokens = 0;
 
-    if (pszString != nullptr)
-    {
-        pszNextToken = pszString;
+	if (IsValidStringPtr(pszString))
+	{
+		pszNextToken = pszString;
 
-        if ((lpszBuffers != nullptr) && (dwNumBuffers > 0))
-        {
-            for (; pszNextToken && dwTokens < dwNumBuffers; ++dwTokens)
-            {
-                GetTokenA(pszNextToken, szBuffer, &pszNextToken, bUseBrackets);
+		if ((lpszBuffers != NULL) && (dwNumBuffers > 0))
+		{
+			for (dwTokens = 0; pszNextToken && (dwTokens < dwNumBuffers); dwTokens++)
+			{
+				GetToken(pszNextToken, szBuffer, &pszNextToken, bUseBrackets);
 
-                if (lpszBuffers[dwTokens] != nullptr)
-                {
-                    StringCchCopyA(lpszBuffers[dwTokens],
-                        strlen(szBuffer) + 1, szBuffer);
-                }
-            }
+				if (IsValidStringPtr(lpszBuffers[dwTokens]))
+				{
+					StringCchCopy(lpszBuffers[dwTokens], strlen(szBuffer) + 1, szBuffer);
+				}
+			}
 
-            for (DWORD dwClear = dwTokens; dwClear < dwNumBuffers; ++dwClear)
-            {
-                if (lpszBuffers[dwClear] != nullptr)
-                {
-                    lpszBuffers[dwClear][0] = '\0';
-                }
-            }
+			for (DWORD dwClearTokens = dwTokens; dwClearTokens < dwNumBuffers; dwClearTokens++)
+			{
+				if (IsValidStringPtr(lpszBuffers[dwClearTokens]))
+				{
+					lpszBuffers[dwClearTokens][0] = '\0';
+				}
+			}
 
-            if (pszExtraParameters != nullptr)
-            {
-                if (pszNextToken)
-                {
-                    StringCchCopyA(pszExtraParameters,
-                        strlen(pszNextToken) + 1, pszNextToken);
-                }
-                else
-                {
-                    pszExtraParameters[0] = '\0';
-                }
-            }
-        }
-        else
-        {
-            while (GetTokenA(pszNextToken, nullptr, &pszNextToken, bUseBrackets))
-            {
-                ++dwTokens;
-            }
-        }
-    }
+			if (IsValidStringPtr(pszExtraParameters))
+			{
+				if (pszNextToken)
+				{
+					StringCchCopy(pszExtraParameters, strlen(pszNextToken) + 1, pszNextToken);
+				}
+				else
+				{
+					pszExtraParameters[0] = '\0';
+				}
+			}
+		}
+		else
+		{
+			while (GetToken(pszNextToken, NULL, &pszNextToken, bUseBrackets))
+			{
+				++dwTokens;
+			}
+		}
+	}
 
-    return dwTokens;
+	return dwTokens;
 }
 
-
-//
-// LCTokenizeW
-//
-int LCTokenizeW(LPCWSTR pwzString, LPWSTR *lpwzBuffers, DWORD dwNumBuffers, LPWSTR pwzExtraParameters)
+int LCTokenize(LPCSTR szString, LPSTR *lpszBuffers, DWORD dwNumBuffers, LPSTR szExtraParameters)
 {
-    return _Tokenize(pwzString,
-        lpwzBuffers, dwNumBuffers,
-        pwzExtraParameters,
-        FALSE);
+	return _Tokenize(szString, lpszBuffers, dwNumBuffers, szExtraParameters, FALSE);
 }
 
-//
-// LCTokenizeW
-//
-int LCTokenizeA(LPCSTR pszString, LPSTR *lpszBuffers, DWORD dwNumBuffers, LPSTR pszExtraParameters)
+BOOL GetToken(LPCSTR pszString, LPSTR pszToken, LPCSTR* pszNextToken, BOOL bUseBrackets)
 {
-    return _Tokenize(pszString,
-        lpszBuffers, dwNumBuffers,
-        pszExtraParameters,
-        FALSE);
-}
+	LPCSTR pszCurrent = pszString;
+	LPCSTR pszStartMarker = NULL;
+	int iBracketLevel = 0;
+	CHAR cQuote = '\0';
+	bool bIsToken = false;
+	bool bAppendNextToken = false;
 
-//
-// GetTokenW
-//
-BOOL GetTokenW(LPCWSTR pszString, LPWSTR pszToken, LPCWSTR* pszNextToken, BOOL bUseBrackets)
-{
-    LPCWSTR pszCurrent = pszString;
-    LPCWSTR pszStartMarker = nullptr;
-    int iBracketLevel = 0;
-    WCHAR cQuote = L'\0';
-    bool bIsToken = false;
-    bool bAppendNextToken = false;
-
-    if (pszString)
-    {
-        if (pszToken)
+	if (pszString)
+	{
+		if (pszToken)
         {
             pszToken[0] = '\0';
         }
 
         if (pszNextToken)
         {
-            *pszNextToken = nullptr;
+            *pszNextToken = NULL;
         }
 
-        pszCurrent += wcsspn(pszCurrent, WHITESPACEW);
+		pszCurrent += strspn(pszCurrent, WHITESPACE);
 
-        for (; *pszCurrent; ++pszCurrent)
-        {
-            if (iswspace((wint_t)*pszCurrent) && !cQuote)
+		for (; *pszCurrent; pszCurrent++)
+		{
+			if (isspace((unsigned char)*pszCurrent) && !cQuote)
             {
                 break;
             }
 
-            if (bUseBrackets && wcschr(L"[]", *pszCurrent) &&
-                (!wcschr(L"\'\"", cQuote) || !cQuote))
-            {
-                if (*pszCurrent == L'[')
-                {
-                    if (bIsToken && !cQuote)
-                    {
-                        break;
-                    }
-
-                    ++iBracketLevel;
-                    cQuote = L'[';
-
-                    if (iBracketLevel == 1)
-                    {
-                        continue;
-                    }
-                }
-                else
-                {
-                    --iBracketLevel;
-
-                    if (iBracketLevel <= 0)
-                    {
-                        break;
-                    }
-                }
-            }
-
-            if (wcschr(L"\'\"", *pszCurrent) && (cQuote != L'['))
-            {
-                if (!cQuote)
-                {
-                    if (bIsToken)
-                    {
-                        bAppendNextToken = true;
-                        break;
-                    }
-
-                    cQuote = *pszCurrent;
-                    continue;
-                }
-                else if (*pszCurrent == cQuote)
-                {
-                    break;
-                }
-            }
-
-            if (!bIsToken)
-            {
-                bIsToken = true;
-                pszStartMarker = pszCurrent;
-            }
-        }
-
-        if (pszStartMarker && pszToken)
-        {
-            wcsncpy(pszToken, pszStartMarker, pszCurrent - pszStartMarker);
-            pszToken[pszCurrent - pszStartMarker] = L'\0';
-        }
-
-        if (!bAppendNextToken && *pszCurrent)
-        {
-            ++pszCurrent;
-        }
-
-        pszCurrent += wcsspn(pszCurrent, WHITESPACEW);
-
-        if (*pszCurrent && pszNextToken)
-        {
-            *pszNextToken = pszCurrent;
-        }
-
-        if (bAppendNextToken && *pszCurrent)
-        {
-            LPWSTR pszNewToken = pszToken;
-
-            if (pszNewToken)
-            {
-                pszNewToken += wcslen(pszToken);
-            }
-
-            GetTokenW(pszCurrent, pszNewToken, pszNextToken, bUseBrackets);
-        }
-
-        return pszStartMarker != nullptr;
-    }
-
-    return FALSE;
-}
-
-
-//
-// GetTokenA
-//
-BOOL GetTokenA(LPCSTR pszString, LPSTR pszToken, LPCSTR* pszNextToken, BOOL bUseBrackets)
-{
-    LPCSTR pszCurrent = pszString;
-    LPCSTR pszStartMarker = nullptr;
-    int iBracketLevel = 0;
-    CHAR cQuote = '\0';
-    bool bIsToken = false;
-    bool bAppendNextToken = false;
-
-    if (pszString)
-    {
-        if (pszToken)
-        {
-            pszToken[0] = '\0';
-        }
-
-        if (pszNextToken)
-        {
-            *pszNextToken = nullptr;
-        }
-
-        pszCurrent += strspn(pszCurrent, WHITESPACEA);
-
-        for (; *pszCurrent; ++pszCurrent)
-        {
-            if (isspace((unsigned char)*pszCurrent) && !cQuote)
-            {
-                break;
-            }
-
-            if (bUseBrackets && strchr("[]", *pszCurrent) &&
+			if (bUseBrackets && strchr("[]", *pszCurrent) &&
                 (!strchr("\'\"", cQuote) || !cQuote))
-            {
-                if (*pszCurrent == '[')
-                {
-                    if (bIsToken && !cQuote)
+			{
+				if (*pszCurrent == '[')
+				{
+					if (bIsToken && !cQuote)
                     {
                         break;
                     }
 
-                    ++iBracketLevel;
-                    cQuote = '[';
-
+					iBracketLevel++;
+					cQuote = '[';
+					
                     if (iBracketLevel == 1)
                     {
                         continue;
                     }
-                }
-                else
-                {
-                    --iBracketLevel;
-
+				}
+				else
+				{
+					iBracketLevel--;
+					
                     if (iBracketLevel <= 0)
                     {
                         break;
                     }
-                }
-            }
+				}
+			}
 
-            if (strchr("\'\"", *pszCurrent) && (cQuote != '['))
-            {
-                if (!cQuote)
-                {
-                    if (bIsToken)
-                    {
-                        bAppendNextToken = true;
-                        break;
-                    }
+			if (strchr("\'\"", *pszCurrent) && (cQuote != '['))
+			{
+				if (!cQuote)
+				{
+					if (bIsToken)
+					{
+						bAppendNextToken = true;
+						break;
+					}
 
-                    cQuote = *pszCurrent;
-                    continue;
-                }
-                else if (*pszCurrent == cQuote)
-                {
-                    break;
-                }
-            }
+					cQuote = *pszCurrent;
+					continue;
+				}
+				else if (*pszCurrent == cQuote)
+				{
+					break;
+				}
+			}
 
-            if (!bIsToken)
-            {
-                bIsToken = true;
-                pszStartMarker = pszCurrent;
-            }
-        }
+			if (!bIsToken)
+			{
+				bIsToken = true;
+				pszStartMarker = pszCurrent;
+			}
+		}
 
-        if (pszStartMarker && pszToken)
+		if (pszStartMarker && pszToken)
+		{
+			strncpy(pszToken, pszStartMarker, pszCurrent - pszStartMarker);
+			pszToken[pszCurrent - pszStartMarker] = '\0';
+		}
+
+
+		if (!bAppendNextToken && *pszCurrent)
         {
-            //StringCchCopyNA(pszToken, cchToken, pszStartMarker, pszCurrent - pszStartMarker);
-            strncpy(pszToken, pszStartMarker, pszCurrent - pszStartMarker);
-            pszToken[pszCurrent - pszStartMarker] = '\0';
+            pszCurrent++;
         }
 
-        if (!bAppendNextToken && *pszCurrent)
-        {
-            ++pszCurrent;
-        }
+		pszCurrent += strspn(pszCurrent, WHITESPACE);
 
-        pszCurrent += strspn(pszCurrent, WHITESPACEA);
-
-        if (*pszCurrent && pszNextToken)
+		if (*pszCurrent && pszNextToken)
         {
             *pszNextToken = pszCurrent;
         }
 
-        if (bAppendNextToken && *pszCurrent)
+		if (bAppendNextToken && *pszCurrent)
         {
             LPSTR pszNewToken = pszToken;
 
@@ -965,147 +557,60 @@ BOOL GetTokenA(LPCSTR pszString, LPSTR pszToken, LPCSTR* pszNextToken, BOOL bUse
                 pszNewToken += strlen(pszToken);
             }
 
-            GetTokenA(pszCurrent, pszNewToken, pszNextToken, bUseBrackets);
+            GetToken(pszCurrent, pszNewToken, pszNextToken, bUseBrackets);
         }
 
-        return pszStartMarker != nullptr;
-    }
+		return pszStartMarker != NULL;
+	}
 
-    return FALSE;
+	return FALSE;
+}
+
+int CommandTokenize(LPCSTR szString, LPSTR *lpszBuffers, DWORD dwNumBuffers, LPSTR szExtraParameters)
+{
+	return _Tokenize(szString, lpszBuffers, dwNumBuffers, szExtraParameters, TRUE);
 }
 
 
 //
-// CommandTokenize
+// VarExpansion(LPSTR pszExpandedString, LPCSTR pszTemplate)
 //
-int CommandTokenizeW(LPCWSTR pwzString, LPWSTR *lpwzBuffers, DWORD dwNumBuffers, LPWSTR pwzExtraParameters)
+void VarExpansion(LPSTR pszExpandedString, LPCSTR pszTemplate)
 {
-    return _Tokenize(pwzString,
-        lpwzBuffers, dwNumBuffers,
-        pwzExtraParameters,
-        TRUE);
+	if (IsValidStringPtr(pszExpandedString) && IsValidStringPtr(pszTemplate))
+	{
+		char szTempBuffer[MAX_LINE_LENGTH];
+
+		VarExpansionEx(szTempBuffer, pszTemplate, MAX_LINE_LENGTH);
+
+		StringCchCopy(pszExpandedString, strlen(szTempBuffer) + 1, szTempBuffer);
+	}
 }
 
 
 //
-// CommandTokenize
+// VarExpansionEx(LPSTR pszExpandedString, LPCSTR pszTemplate, size_t cchLength)
 //
-int CommandTokenizeA(LPCSTR pszString, LPSTR *lpszBuffers, DWORD dwNumBuffers, LPSTR pszExtraParameters)
+// Taken in part from Raptor's rlib\rutil.cpp\UtilExpandString
+//
+void VarExpansionEx(LPSTR pszExpandedString, LPCSTR pszTemplate, size_t cchExpandedString)
 {
-    return _Tokenize(pszString,
-        lpszBuffers, dwNumBuffers,
-        pszExtraParameters,
-        TRUE);
+	if (IsValidStringPtr(pszExpandedString, cchExpandedString) &&
+	        IsValidStringPtr(pszTemplate))
+	{
+		if(g_LSAPIManager.IsInitialized())
+		{
+			g_LSAPIManager.GetSettingsManager()->VarExpansionEx(pszExpandedString, pszTemplate, cchExpandedString);
+		}
+		else
+		{
+			StringCchCopy(pszExpandedString, cchExpandedString, pszTemplate);
+		}
+	}
 }
 
-
 //
-// VarExpansionW
-//
-void VarExpansionW(LPWSTR pwzExpandedString, LPCWSTR pwzTemplate)
-{
-    if (pwzExpandedString != nullptr && pwzTemplate != nullptr)
-    {
-        wchar_t wzTempBuffer[MAX_LINE_LENGTH];
-
-        VarExpansionExW(wzTempBuffer, pwzTemplate, MAX_LINE_LENGTH);
-
-        // bad mojo, but its a limitation of this old API
-        StringCchCopyW(pwzExpandedString,
-            wcslen(wzTempBuffer) + 1, wzTempBuffer);
-    }
-}
-
-
-//
-// VarExpansionA
-//
-void VarExpansionA(LPSTR pszExpandedString, LPCSTR pszTemplate)
-{
-    if (pszExpandedString != nullptr && pszTemplate != nullptr)
-    {
-        char szTempBuffer[MAX_LINE_LENGTH];
-
-        VarExpansionExA(szTempBuffer, pszTemplate, MAX_LINE_LENGTH);
-
-        // bad mojo, but its a limitation of this old API
-        StringCchCopyA(pszExpandedString,
-            strlen(szTempBuffer) + 1, szTempBuffer);
-    }
-}
-
-
-//
-// VarExpansionExW
-//
-void VarExpansionExW(LPWSTR pwzExpandedString, LPCWSTR pwzTemplate, size_t cchExpandedString)
-{
-    if (pwzExpandedString != nullptr &&
-        cchExpandedString > 0 &&
-        pwzTemplate != nullptr)
-    {
-        if (g_LSAPIManager.IsInitialized())
-        {
-            g_LSAPIManager.GetSettingsManager()->VarExpansionEx(
-                pwzExpandedString, pwzTemplate, cchExpandedString);
-        }
-        else
-        {
-            StringCchCopyW(pwzExpandedString, cchExpandedString, pwzTemplate);
-        }
-    }
-}
-
-
-//
-// VarExpansionExA
-//
-void VarExpansionExA(LPSTR pszExpandedString, LPCSTR pszTemplate, size_t cchExpandedString)
-{
-    if (pszExpandedString != nullptr &&
-        cchExpandedString > 0 &&
-        pszTemplate != nullptr)
-    {
-        if (g_LSAPIManager.IsInitialized())
-        {
-            std::unique_ptr<wchar_t> temp(new wchar_t[cchExpandedString]);
-            g_LSAPIManager.GetSettingsManager()->VarExpansionEx(
-                temp.get(), MBSTOWCS(pszTemplate), cchExpandedString);
-            WideCharToMultiByte(CP_ACP, 0, temp.get(), -1,
-                pszExpandedString, (int)cchExpandedString, "?", nullptr);
-        }
-        else
-        {
-            StringCchCopyA(pszExpandedString, cchExpandedString, pszTemplate);
-        }
-    }
-}
-
-
-//
-// ENUM_DATA
-// Helper struct for EnumBangsThunk
-//
-typedef struct ENUM_DATA
-{
-    FARPROC fnCallback;
-    LPARAM lParam;
-} *LPENUM_DATA;
-
-
-//
-// EnumBangsThunk
-// An ELD_BANGS_V2 thunk that translates to an ELD_BANGS-style callback
-//
-static BOOL CALLBACK EnumBangsThunk(HINSTANCE, LPCWSTR pwzBang, LPARAM lParam)
-{
-    LPENUM_DATA pData = (LPENUM_DATA)lParam;
-    return LSENUMBANGSPROCW(pData->fnCallback)(pwzBang, pData->lParam);
-}
-
-
-//
-// EnumLSDataW
+// EnumLSData
 //
 // Return values:
 //   E_INVALIDARG - Invalid value for uInfo
@@ -1115,61 +620,36 @@ static BOOL CALLBACK EnumBangsThunk(HINSTANCE, LPCWSTR pwzBang, LPARAM lParam)
 //   S_OK         - Enumeration successful, callback always returned TRUE
 //   S_FALSE      - Enumeration successful, but cancelled by callback
 //
-HRESULT EnumLSDataW(UINT uInfo, FARPROC pfnCallback, LPARAM lParam)
+HRESULT EnumLSData(UINT uInfo, FARPROC pfnCallback, LPARAM lParam)
 {
     HRESULT hr = E_INVALIDARG;
-
+    
     if (NULL != pfnCallback)
     {
         switch (uInfo)
-        {
-        case ELD_BANGS:
-            {
-                //
-                // Call EnumLSData recursively and let a small thunk handle
-                // the translation from ELD_BANGS_V2 to ELD_BANGS
-                //
-                ENUM_DATA data = { 0 };
-                data.fnCallback = pfnCallback;
-                data.lParam = lParam;
-
-                hr = EnumLSDataW(ELD_BANGS_V2,
-                    (FARPROC)EnumBangsThunk, (LPARAM)&data);
-            }
-            break;
-
-        case ELD_BANGS_V2:
+        {   
+            case ELD_BANGS:
             {
                 hr = g_LSAPIManager.GetBangManager()->
-                    EnumBangs((LSENUMBANGSV2PROCW)pfnCallback, lParam);
+                    EnumBangs((LSENUMBANGSPROC)pfnCallback, lParam);
             }
             break;
-
-        case ELD_REVIDS:
+            
+            case ELD_REVIDS:
             {
                 hr = (HRESULT)SendMessage(GetLitestepWnd(), LM_ENUMREVIDS,
                     (WPARAM)pfnCallback, lParam);
             }
             break;
-
-        case ELD_MODULES:
+            
+            case ELD_MODULES:
             {
                 hr = (HRESULT)SendMessage(GetLitestepWnd(), LM_ENUMMODULES,
                     (WPARAM)pfnCallback, lParam);
             }
             break;
-
-        case ELD_PERFORMANCE:
-            {
-                hr = (HRESULT)SendMessage(GetLitestepWnd(), LM_ENUMPERFORMANCE,
-                    (WPARAM)pfnCallback, lParam);
-            }
-            break;
-
-        default:
-            {
-                // do nothing
-            }
+            
+            default:
             break;
         }
     }
@@ -1177,124 +657,6 @@ HRESULT EnumLSDataW(UINT uInfo, FARPROC pfnCallback, LPARAM lParam)
     {
         hr = E_POINTER;
     }
-
-    return hr;
-}
-
-
-//
-// ANSII wrappers
-//
-static BOOL CALLBACK EnumLSDataBangsANSIIWrapper(LPCWSTR pwzBang, LPARAM lParam)
-{
-    LPENUM_DATA pData = (LPENUM_DATA)lParam;
-    return LSENUMBANGSPROCA(pData->fnCallback)(std::unique_ptr<char>(MBSFromWCS(pwzBang)).get(), pData->lParam);
-}
-static BOOL CALLBACK EnumLSDataBangsV2ANSIIWrapper(HINSTANCE hInst, LPCWSTR pwzBang, LPARAM lParam)
-{
-    LPENUM_DATA pData = (LPENUM_DATA)lParam;
-    return LSENUMBANGSV2PROCA(pData->fnCallback)(hInst, std::unique_ptr<char>(MBSFromWCS(pwzBang)).get(), pData->lParam);
-}
-static BOOL CALLBACK EnumLSDataRevIDsANSIIWrapper(LPCWSTR pwzRevID, LPARAM lParam)
-{
-    LPENUM_DATA pData = (LPENUM_DATA)lParam;
-    return LSENUMREVIDSPROCA(pData->fnCallback)(std::unique_ptr<char>(MBSFromWCS(pwzRevID)).get(), pData->lParam);
-
-}
-static BOOL CALLBACK EnumLSDataModulesANSIIWrapper(LPCWSTR pwzModule, DWORD fdwFlags, LPARAM lParam)
-{
-    LPENUM_DATA pData = (LPENUM_DATA)lParam;
-    return LSENUMMODULESPROCA(pData->fnCallback)(std::unique_ptr<char>(MBSFromWCS(pwzModule)).get(), fdwFlags, pData->lParam);
-
-}
-static BOOL CALLBACK EnumLSDataPerformanceANSIIWrapper(LPCWSTR pwzModule, DWORD dwLoadTime, LPARAM lParam)
-{
-    LPENUM_DATA pData = (LPENUM_DATA)lParam;
-    return LSENUMPERFORMANCEPROCA(pData->fnCallback)(std::unique_ptr<char>(MBSFromWCS(pwzModule)).get(), dwLoadTime, pData->lParam);
-}
-
-
-//
-// EnumLSDataA
-//
-// Return values:
-//   E_INVALIDARG - Invalid value for uInfo
-//   E_POINTER    - Invalid callback
-//   E_FAIL       - Unspecified error
-//   E_UNEXPECTED - Callback crashed or other catastrophic failure
-//   S_OK         - Enumeration successful, callback always returned TRUE
-//   S_FALSE      - Enumeration successful, but cancelled by callback
-//
-HRESULT EnumLSDataA(UINT uInfo, FARPROC pfnCallback, LPARAM lParam)
-{
-    HRESULT hr = E_INVALIDARG;
-
-    if (nullptr != pfnCallback)
-    {
-        ENUM_DATA data;
-        data.lParam = lParam;
-        data.fnCallback = pfnCallback;
-
-        pfnCallback = nullptr;
-
-        switch (uInfo)
-        {
-        case ELD_BANGS:
-            {
-                pfnCallback = FARPROC(EnumLSDataBangsANSIIWrapper);
-            }
-            break;
-
-        case ELD_BANGS_V2:
-            {
-                pfnCallback = FARPROC(EnumLSDataBangsV2ANSIIWrapper);
-            }
-            break;
-
-        case ELD_REVIDS:
-            {
-                pfnCallback = FARPROC(EnumLSDataRevIDsANSIIWrapper);
-            }
-            break;
-
-        case ELD_MODULES:
-            {
-                pfnCallback = FARPROC(EnumLSDataModulesANSIIWrapper);
-            }
-            break;
-
-        case ELD_PERFORMANCE:
-            {
-                pfnCallback = FARPROC(EnumLSDataPerformanceANSIIWrapper);
-            }
-            break;
-        }
-
-        if (nullptr != pfnCallback)
-        {
-            hr = EnumLSDataW(uInfo, pfnCallback, (LPARAM)&data);
-        }
-    }
-    else
-    {
-        hr = E_POINTER;
-    }
-
-    return hr;
-}
-
-
-HRESULT LSCoCreateInstance(REFCLSID rclsid, LPUNKNOWN pUnkOuter,
-    DWORD dwClsContext, REFIID riid, LPVOID *ppv)
-{
-    HRESULT hr = E_NOINTERFACE;
-    if (g_LSAPIManager.GetCOMFactory() != nullptr)
-    {
-        hr = g_LSAPIManager.GetCOMFactory()->CreateInstance(pUnkOuter, riid, ppv);
-    }
-    if (hr == E_NOINTERFACE)
-    {
-        hr = CoCreateInstance(rclsid, pUnkOuter, dwClsContext, riid, ppv);
-    }
+    
     return hr;
 }

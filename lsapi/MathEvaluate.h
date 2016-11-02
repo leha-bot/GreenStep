@@ -1,29 +1,27 @@
-//=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
-//
-// This is a part of the Litestep Shell source code.
-//
-// Copyright (C) 1997-2015  LiteStep Development Team
-//
-// This program is free software; you can redistribute it and/or
-// modify it under the terms of the GNU General Public License
-// as published by the Free Software Foundation; either version 2
-// of the License, or (at your option) any later version.
-//
-// This program is distributed in the hope that it will be useful,
-// but WITHOUT ANY WARRANTY; without even the implied warranty of
-// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-// GNU General Public License for more details.
-//
-// You should have received a copy of the GNU General Public License
-// along with this program; if not, write to the Free Software
-// Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
-//
-//=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
+/*
+This is a part of the LiteStep Shell Source code.
+
+Copyright (C) 2006 The LiteStep Development Team
+
+This program is free software; you can redistribute it and/or
+modify it under the terms of the GNU General Public License
+as published by the Free Software Foundation; either version 2
+of the License, or (at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program; if not, write to the Free Software
+Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
+*/
 #if !defined(MATHEVALUATE_H)
 #define MATHEVALUATE_H
 
-#include "SettingsDefines.h"
 #include <string>
+#include "SettingsDefines.h"
 
 
 /**
@@ -49,10 +47,9 @@ enum
  *         <code>false</code> if an error occured
  */
 bool MathEvaluateBool(const SettingsMap& context,
-    const std::wstring& expression,
+    const std::string& expression,
     bool& result,
     unsigned int flags = 0);
-
 
 /**
  * Evaluates a math expression and converts the result to a string.
@@ -66,8 +63,8 @@ bool MathEvaluateBool(const SettingsMap& context,
  *         <code>false</code> if an error occured
  */
 bool MathEvaluateString(const SettingsMap& context,
-    const std::wstring& expression,
-    std::wstring& result,
+    const std::string& expression,
+    std::string& result,
     const StringSet& recursiveVarSet,
     unsigned int flags = 0);
 

@@ -1,30 +1,28 @@
-//=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
-//
-// This is a part of the Litestep Shell source code.
-//
-// Copyright (C) 1997-2015  LiteStep Development Team
-//
-// This program is free software; you can redistribute it and/or
-// modify it under the terms of the GNU General Public License
-// as published by the Free Software Foundation; either version 2
-// of the License, or (at your option) any later version.
-//
-// This program is distributed in the hope that it will be useful,
-// but WITHOUT ANY WARRANTY; without even the implied warranty of
-// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-// GNU General Public License for more details.
-//
-// You should have received a copy of the GNU General Public License
-// along with this program; if not, write to the Free Software
-// Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
-//
-//=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
+/*
+This is a part of the LiteStep Shell Source code.
+
+Copyright (C) 2006 The LiteStep Development Team
+
+This program is free software; you can redistribute it and/or
+modify it under the terms of the GNU General Public License
+as published by the Free Software Foundation; either version 2
+of the License, or (at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program; if not, write to the Free Software
+Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
+*/
 #if !defined(LSAPIINIT_H)
 #define LSAPIINIT_H
 
+#include "../utility/common.h"
 #include "BangManager.h"
 #include "SettingsManager.h"
-#include "../utility/common.h"
 
 enum ErrorType
 {
@@ -41,15 +39,9 @@ enum ErrorType
 class LSAPIException
 {
 public:
-    explicit LSAPIException(ErrorType et) throw() :m_et(et)
-    {
-        // do nothing
-    }
-    ErrorType Type() const throw()
-    {
-        return m_et;
-    }
-
+    explicit LSAPIException(ErrorType et) throw() :m_et(et) { }
+    ErrorType Type() const throw() { return m_et; }
+    
 private:
     ErrorType m_et;
 };
@@ -57,84 +49,72 @@ private:
 class LSAPIInit
 {
 private:
-    bool setShellFolderVariable(LPCWSTR pwzVariable, int nFolder);
+    bool setShellFolderVariable(LPCSTR pszVariable, int nFolder);
     void setLitestepVars();
-    void getCompileTime(LPWSTR pwzValue, size_t cchValue);
-
+    void getCompileTime(LPSTR pszValue, size_t cchValue);
+    
 public:
     LSAPIInit();
     ~LSAPIInit();
-
+    
     BangManager* GetBangManager() const
     {
-        if (!IsInitialized())
+        if(!IsInitialized())
         {
             throw LSAPIException(LSAPI_ERROR_NOTINITIALIZED);
         }
-
+        
         return m_bmBangManager;
     }
-
+    
     SettingsManager* GetSettingsManager() const
     {
-        if (!IsInitialized())
+        if(!IsInitialized())
         {
             throw LSAPIException(LSAPI_ERROR_NOTINITIALIZED);
         }
-
+        
         return m_smSettingsManager;
     }
-
+    
     HWND GetLitestepWnd() const
     {
         return m_hLitestepWnd;
     }
-
+    
     DWORD GetMainThreadID() const
     {
         return m_dwMainThreadID;
     }
-
-    void Initialize(LPCWSTR pszLitestepPath, LPCWSTR pszRcPath);
-
+    
+    void Initialize(LPCSTR pszLitestepPath, LPCSTR pszRcPath);
+    
     bool IsInitialized() const
     {
         return m_bIsInitialized;
     }
-
+    
     void ReloadBangs();
     void ReloadSettings();
-
+    
     void SetLitestepWindow(HWND hLitestepWnd)
     {
         m_hLitestepWnd = hLitestepWnd;
     }
-
-    void SetCOMFactory(IClassFactory *pFactory)
-    {
-        m_pComFactory = pFactory;
-    }
-
-    IClassFactory *GetCOMFactory() const
-    {
-        return m_pComFactory;
-    }
-
+    
 private:
     DWORD m_dwMainThreadID;
-
+    
     BangManager* m_bmBangManager;
     SettingsManager* m_smSettingsManager;
-
+    
     HWND m_hLitestepWnd;
-    IClassFactory *m_pComFactory;
-    wchar_t m_wzLitestepPath[MAX_PATH];
-    wchar_t m_wzRcPath[MAX_PATH];
-
+    char m_szLitestepPath[MAX_PATH];
+    char m_szRcPath[MAX_PATH];
+    
     bool m_bIsInitialized;
 };
 
 extern LSAPIInit g_LSAPIManager;
-extern void SetupBangs();
 
 #endif // LSAPIINIT_H

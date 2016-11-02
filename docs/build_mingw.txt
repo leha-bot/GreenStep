@@ -1,15 +1,23 @@
 =-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
-    LiteStep 0.25.0
+    LiteStep 0.24.8
     MinGW Developer Information
 =-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
+
+
+-- NOTE ------------------------------------------------------------------------
+
+ MinGW build support is considered experimental at this time. Visual C++ 6.0 is
+ currently the only officially supported compiler.
 
 
 -- BUILD REQUIREMENTS ----------------------------------------------------------
 
  - TDM/MinGW Installer 1.812.0 (www.tdragon.net/recentgcc/)
  - Recent version of Strsafe.h from Microsoft Windows SDK (www.microsoft.com)
+ - libpng 1.2.35 (www.libpng.org)
+ - zlib 1.2.3 (www.zlib.net)
 
- This is the configuration used during 0.25.0 development, it is quite possible
+ This is the configuration used during 0.24.8 development, it is quite possible
  that other versions of the above packages can be used, but there's no
  guarantee.
 
@@ -30,6 +38,15 @@
      included in recent Microsoft SDKs.  Copy the strsafe.h header file into the
      MinGW include directory.
 
+ C. Install zlib and libpng developer files
+ ------------------------------------------
+
+  1. Download the "lsdev-builddeps.zip" archive from www.lsdev.org.
+
+  2. Extract the contents of the include folder to the mingw include folder.
+
+  3. Extract libpng13.dll.a from the lib folder to the mingw lib folder.
+
 -- BUILDING LITESTEP -----------------------------------------------------------
 
  A. Extract source code
@@ -41,6 +58,7 @@
      directory has the following structure:
 
      \LiteStep
+         \hook
          \litestep
          \lsapi
          \utility

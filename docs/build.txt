@@ -1,5 +1,5 @@
 =-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
-    LiteStep 0.25.0
+    LiteStep 0.24.8
     Developer Information
 =-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 
@@ -8,7 +8,7 @@
 
  For build instructions, please review
 
-  - build_vc11.txt   (official supported method)
+  - build_vc6.txt   (official supported method)
   - build_mingw.txt
 
  The LiteStep source is segmented into separate code modules.  The source folder
@@ -22,6 +22,9 @@
 
   \LiteStep\lsapi
     - Contains the "lsapi.dll" source files
+
+  \LiteStep\hook
+    - Contains the "hook.dll" source files
 
   \LiteStep\utility
     - Contains common utility source files used across all code modules
@@ -37,4 +40,10 @@
                     handles $evars$ and all other configuration. Manages !bang
                     commands, includes core !bangs.
 
+ - hook.dll         The system shell hook used by some legacy LiteStep modules
+                    for receiving global system messages.
+
 -- LITESTEP MODULE DEVELOPMENT -------------------------------------------------
+
+ All modules should be built using the LiteStep Module SDK which is available
+ from www.lsdev.org

@@ -1,85 +1,100 @@
-//=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
-//
-// This is a part of the Litestep Shell source code.
-//
-// Copyright (C) 1997-2015  LiteStep Development Team
-//
-// This program is free software; you can redistribute it and/or
-// modify it under the terms of the GNU General Public License
-// as published by the Free Software Foundation; either version 2
-// of the License, or (at your option) any later version.
-//
-// This program is distributed in the hope that it will be useful,
-// but WITHOUT ANY WARRANTY; without even the implied warranty of
-// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-// GNU General Public License for more details.
-//
-// You should have received a copy of the GNU General Public License
-// along with this program; if not, write to the Free Software
-// Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
-//
-//=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
+/*
+This is a part of the LiteStep Shell Source code.
+
+Copyright (C) 2006 The LiteStep Development Team
+
+This program is free software; you can redistribute it and/or
+modify it under the terms of the GNU General Public License
+as published by the Free Software Foundation; either version 2
+of the License, or (at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program; if not, write to the Free Software
+Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
+*/ 
+/****************************************************************************
+****************************************************************************/
+#include <sstream>
+#include <string>
 #include "MathToken.h"
 
-using std::wstring;
+using namespace std;
+
+
+// Mapping of token types to names
+struct { int type; const char *name; } gTokenTypes[] =
+{
+    { TT_INVALID,   "INVALID"   },
+    { TT_ID,        "ID"        },
+    { TT_FALSE,     "FALSE"     },
+    { TT_TRUE,      "TRUE"      },
+    { TT_NUMBER,    "NUMBER"    },
+    { TT_INFINITY,  "INFINITY"  },
+    { TT_NAN,       "NAN"       },
+    { TT_STRING,    "STRING"    },
+    { TT_LPAREN,    "LPAREN"    },
+    { TT_RPAREN,    "RPAREN"    },
+    { TT_DEFINED,   "DEFINED"   },
+    { TT_COMMA,     "COMMA"     },
+    { TT_PLUS,      "PLUS"      },
+    { TT_MINUS,     "MINUS"     },
+    { TT_STAR,      "STAR"      },
+    { TT_SLASH,     "SLASH"     },
+    { TT_DIV,       "DIV"       },
+    { TT_MOD,       "MOD"       },
+    { TT_AMPERSAND, "AMPERSAND" },
+    { TT_AND,       "AND"       },
+    { TT_OR,        "OR"        },
+    { TT_NOT,       "NOT"       },
+    { TT_EQUAL,     "EQUAL"     },
+    { TT_GREATER,   "GREATER"   },
+    { TT_GREATEREQ, "GREATEREQ" },
+    { TT_LESS,      "LESS"      },
+    { TT_LESSEQ,    "LESSEQ"    },
+    { TT_NOTEQUAL,  "NOTEQUAL"  },
+    { TT_END,       "END"       }
+};
+
+const int gNumTokenTypes = sizeof(gTokenTypes) / sizeof(gTokenTypes[0]);
 
 
 MathToken::MathToken() :
     mType(TT_INVALID)
 {
-    // do nothing
+
 }
 
 
 MathToken::MathToken(int type) :
     mType(type)
 {
-    // do nothing
+
 }
 
 
-MathToken::MathToken(int type, const wstring& value) :
+MathToken::MathToken(int type, const string& value) :
     mType(type), mValue(value)
 {
-    // do nothing
+
 }
 
 
-wstring MathToken::GetTypeName() const
+string MathToken::GetTypeName() const
 {
-    switch (mType)
+    for (int i = 0; i < gNumTokenTypes; i++)
     {
-    case TT_INVALID: return L"INVALID";
-    case TT_ID: return L"ID";
-    case TT_FALSE: return L"FALSE";
-    case TT_TRUE: return L"TRUE";
-    case TT_NUMBER: return L"NUMBER";
-    case TT_INFINITY: return L"INFINITY";
-    case TT_NAN: return L"NAN";
-    case TT_STRING: return L"STRING";
-    case TT_LPAREN: return L"LPAREN";
-    case TT_RPAREN: return L"RPAREN";
-    case TT_DEFINED: return L"DEFINED";
-    case TT_COMMA: return L"COMMA";
-    case TT_PLUS: return L"PLUS";
-    case TT_MINUS: return L"MINUS";
-    case TT_STAR: return L"STAR";
-    case TT_SLASH: return L"SLASH";
-    case TT_DIV: return L"DIV";
-    case TT_MOD: return L"MOD";
-    case TT_AMPERSAND: return L"AMPERSAND";
-    case TT_AND: return L"AND";
-    case TT_OR: return L"OR";
-    case TT_NOT: return L"NOT";
-    case TT_EQUAL: return L"EQUAL";
-    case TT_GREATER: return L"GREATER";
-    case TT_GREATEREQ: return L"GREATEREQ";
-    case TT_LESS: return L"LESS";
-    case TT_LESSEQ: return L"LESSEQ";
-    case TT_NOTEQUAL: return L"NOTEQUAL";
-    case TT_END: return L"END";
-    default: return wstring();
+        if (gTokenTypes[i].type == mType)
+        {
+            return string(gTokenTypes[i].name);
+        }
     }
+    
+    return string();
 }
 
 
@@ -89,7 +104,7 @@ void MathToken::SetType(int type)
 }
 
 
-void MathToken::SetValue(const wstring& value)
+void MathToken::SetValue(const string& value)
 {
     mValue = value;
 }

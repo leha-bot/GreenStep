@@ -1,24 +1,22 @@
-//=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
-//
-// This is a part of the Litestep Shell source code.
-//
-// Copyright (C) 1997-2015  LiteStep Development Team
-//
-// This program is free software; you can redistribute it and/or
-// modify it under the terms of the GNU General Public License
-// as published by the Free Software Foundation; either version 2
-// of the License, or (at your option) any later version.
-//
-// This program is distributed in the hope that it will be useful,
-// but WITHOUT ANY WARRANTY; without even the implied warranty of
-// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-// GNU General Public License for more details.
-//
-// You should have received a copy of the GNU General Public License
-// along with this program; if not, write to the Free Software
-// Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
-//
-//=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
+/*
+This is a part of the LiteStep Shell Source code.
+
+Copyright (C) 2005-2006 The LiteStep Development Team
+
+This program is free software; you can redistribute it and/or
+modify it under the terms of the GNU General Public License
+as published by the Free Software Foundation; either version 2
+of the License, or (at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program; if not, write to the Free Software
+Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
+*/
 #if !defined(TRAYAPPBAR_H)
 #define TRAYAPPBAR_H
 
@@ -30,43 +28,26 @@
 #define ABS_OVERLAPAUTOHIDE 0x00020000
 #define ABS_CLEANRECT       0x00040000
 
-// Maintains 32bit handles on 64bit builds
-typedef DWORD HANDLE32;
-typedef DWORD HWND32;
-typedef LONG LPARAM32;
-
 typedef struct _APPBARDATAV1
 {
     DWORD cbSize;
-    HWND32 hWnd;
+    HWND hWnd;
     UINT uCallbackMessage;
     UINT uEdge;
     RECT rc;
-    LPARAM32 lParam;
+    LPARAM lParam;
 } APPBARDATAV1, *PAPPBARDATAV1;
 
 typedef struct _APPBARDATAV2
 {
     DWORD cbSize;
-    HWND32 hWnd;
+    HWND hWnd;
     UINT uCallbackMessage;
     UINT uEdge;
     RECT rc;
-    LPARAM32 lParam;
+    LPARAM lParam;
     DWORD dw64BitAlign;
 } APPBARDATAV2, *PAPPBARDATAV2;
-
-/* 2K */
-typedef struct _APPBARMSGDATAV1
-{
-    APPBARDATAV1 abd;
-    /**/
-    DWORD  dwMessage;
-    HANDLE32 hSharedMemory;
-    DWORD  dwSourceProcessId;
-    /**/
-} APPBARMSGDATAV1, *PAPPBARMSGDATAV1;
-typedef const APPBARMSGDATAV1 * PCAPPBARMSGDATAV1;
 
 /* XP */
 typedef struct _APPBARMSGDATAV2
@@ -74,7 +55,7 @@ typedef struct _APPBARMSGDATAV2
     APPBARDATAV2 abd;
     /**/
     DWORD  dwMessage;
-    HANDLE32 hSharedMemory;
+    HANDLE hSharedMemory;
     DWORD  dwSourceProcessId;
     /**/
     DWORD dw64BitAlign;
@@ -82,23 +63,17 @@ typedef struct _APPBARMSGDATAV2
 } APPBARMSGDATAV2, *PAPPBARMSGDATAV2;
 typedef const APPBARMSGDATAV2 * PCAPPBARMSGDATAV2;
 
-/* Win7 */
-typedef struct _APPBARMSGDATAV3
+/* 2K */
+typedef struct _APPBARMSGDATAV1
 {
-    APPBARDATAV2 abd;
+    APPBARDATAV1 abd;
     /**/
     DWORD  dwMessage;
-    DWORD  dwPadding1;
-    /**/
-    HANDLE32 hSharedMemory;
-    DWORD  dwPadding2;
-    /**/
+    HANDLE hSharedMemory;
     DWORD  dwSourceProcessId;
-    DWORD  dwPadding3;
     /**/
-} APPBARMSGDATAV3, *PAPPBARMSGDATAV3;
-typedef const APPBARMSGDATAV3* PCAPPBARMSGDATAV3;
-
+} APPBARMSGDATAV1, *PAPPBARMSGDATAV1;
+typedef const APPBARMSGDATAV1 * PCAPPBARMSGDATAV1;
 
 class AppBar
 {
@@ -110,11 +85,9 @@ public:
         ,m_uEdge((UINT)-1)
         ,m_hMon(NULL)
     {
-        // do nothing
     }
     ~AppBar()
     {
-        // do nothing
     }
 
     inline HWND hWnd() const
@@ -127,7 +100,7 @@ public:
         return m_lParam;
     }
 
-    inline void lParam(LPARAM lParam)
+    inline void lParam(LPARAM const lParam)
     {
         m_lParam = lParam;
     }
@@ -137,7 +110,7 @@ public:
         return m_uEdge;
     }
 
-    inline void uEdge(UINT uEdge)
+    inline void uEdge(UINT const uEdge)
     {
         m_uEdge = uEdge;
     }
@@ -147,7 +120,7 @@ public:
         return m_hMon;
     }
 
-    inline void hMon(HMONITOR hMon)
+    inline void hMon(HMONITOR const hMon)
     {
         m_hMon = hMon;
     }
@@ -185,10 +158,6 @@ private:
     RECT     m_rc;
     UINT     m_uEdge;
     HMONITOR m_hMon;
-
-    // not implemented
-    AppBar(const AppBar& rhs);
-    AppBar& operator=(const AppBar& rhs);
 };
 
 #endif /* !defined(TRAYAPPBAR_H) */
